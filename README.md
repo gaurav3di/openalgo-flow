@@ -265,4 +265,4 @@ Use variables to pass data between nodes:
 
 ## License
 
-MIT
+AGPL V3

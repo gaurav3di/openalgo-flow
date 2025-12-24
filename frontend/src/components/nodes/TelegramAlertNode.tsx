@@ -15,9 +15,10 @@ interface TelegramAlertNodeProps {
 }
 
 export const TelegramAlertNode = memo(({ data, selected }: TelegramAlertNodeProps) => {
+  const nodeData = data as unknown as Record<string, unknown>
   const truncatedMessage = data.message
-    ? data.message.length > 30
-      ? data.message.substring(0, 30) + '...'
+    ? data.message.length > 25
+      ? data.message.substring(0, 25) + '...'
       : data.message
     : 'No message'
 
@@ -41,7 +42,7 @@ export const TelegramAlertNode = memo(({ data, selected }: TelegramAlertNodeProp
           <div>
             <div className="text-xs font-medium leading-tight">Telegram</div>
             <div className="text-[9px] text-muted-foreground">
-              Alert
+              {(nodeData.username as string) || 'No user'}
             </div>
           </div>
         </div>

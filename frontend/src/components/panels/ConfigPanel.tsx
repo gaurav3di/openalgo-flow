@@ -1259,6 +1259,17 @@ export function ConfigPanel() {
           {nodeType === 'telegramAlert' && (
             <>
               <div className="space-y-2">
+                <Label>OpenAlgo Username</Label>
+                <Input
+                  placeholder="Your OpenAlgo login ID"
+                  value={(nodeData.username as string) || ''}
+                  onChange={(e) => handleDataChange('username', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Your OpenAlgo login ID for Telegram notifications
+                </p>
+              </div>
+              <div className="space-y-2">
                 <Label>Message</Label>
                 <textarea
                   className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

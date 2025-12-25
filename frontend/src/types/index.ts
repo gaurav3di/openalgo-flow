@@ -362,7 +362,9 @@ export interface TelegramAlertNodeData {
 /** Delay Node - Wait for duration */
 export interface DelayNodeData {
   label?: string
-  delayMs: number
+  delayMs?: number  // Legacy: milliseconds
+  delayValue?: number  // New: value
+  delayUnit?: 'seconds' | 'minutes' | 'hours'  // New: unit
 }
 
 /** Wait Until Node - Pause until specific time */

@@ -14,7 +14,20 @@ interface DelayNodeProps {
   selected?: boolean
 }
 
-function formatDelay(ms: number): string {
+function formatDelay(data: DelayNodeData): string {
+  // New format: delayValue + delayUnit
+  if (data.delayValue !== undefined) {
+    const value = data.delayValue
+    const unit = data.delayUnit || 'seconds'
+    const unitLabels: Record<string, string> = {
+      seconds: 's',
+      minutes: 'm',
+      hours: 'h',
+    }
+    return `${value}${unitLabels[unit] || 's'}`
+  }
+  // Backward compatibility: old delayMs format
+  const ms = data.delayMs || 1000
   if (ms >= 60000) {
     const mins = Math.floor(ms / 60000)
     const secs = Math.floor((ms % 60000) / 1000)
@@ -45,15 +58,15 @@ export const DelayNode = memo(({ data, selected }: DelayNodeProps) => {
             <Timer className="h-3 w-3" />
           </div>
           <div>
-            <div className="text-xs font-medium leading-tight">Delay</div>
+            <div className="text-xs font-medium leading-tight">Wait Duration</div>
             <div className="text-[9px] text-muted-foreground">
-              Wait
+              Delay
             </div>
           </div>
         </div>
         <div className="rounded bg-muted/50 px-1.5 py-1 text-center">
           <span className="mono-data text-sm font-semibold text-primary">
-            {formatDelay(data.delayMs || 1000)}
+            {formatDelay(data)}
           </span>
         </div>
       </div>

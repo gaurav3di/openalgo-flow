@@ -1347,17 +1347,33 @@ export function ConfigPanel() {
           {nodeType === 'delay' && (
             <>
               <div className="space-y-2">
-                <Label>Delay (milliseconds)</Label>
-                <Input
-                  type="number"
-                  min={100}
-                  step={100}
-                  value={(nodeData.delayMs as number) || 1000}
-                  onChange={(e) => handleDataChange('delayMs', parseInt(e.target.value) || 1000)}
-                />
+                <Label>Wait Duration</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="flex-1"
+                    value={(nodeData.delayValue as number) || 1}
+                    onChange={(e) => handleDataChange('delayValue', parseInt(e.target.value) || 1)}
+                  />
+                  <Select
+                    value={(nodeData.delayUnit as string) || 'seconds'}
+                    onValueChange={(v) => handleDataChange('delayUnit', v)}
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="seconds">Seconds</SelectItem>
+                      <SelectItem value="minutes">Minutes</SelectItem>
+                      <SelectItem value="hours">Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                {((nodeData.delayMs as number) || 1000) / 1000} seconds
+                Triggers once the set duration has passed
               </p>
             </>
           )}
@@ -1832,6 +1848,88 @@ export function ConfigPanel() {
                   checked={(nodeData.invertCondition as boolean) || false}
                   onCheckedChange={(v) => handleDataChange('invertCondition', v)}
                 />
+              </div>
+            </>
+          )}
+
+          {/* ===== AND GATE NODE ===== */}
+          {nodeType === 'andGate' && (
+            <>
+              <div className="space-y-2">
+                <Label>Number of Inputs</Label>
+                <Select
+                  value={String((nodeData.inputCount as number) || 2)}
+                  onValueChange={(v) => handleDataChange('inputCount', parseInt(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2">2 inputs</SelectItem>
+                    <SelectItem value="3">3 inputs</SelectItem>
+                    <SelectItem value="4">4 inputs</SelectItem>
+                    <SelectItem value="5">5 inputs</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Connect condition nodes to ALL inputs. Output is Yes only if ALL conditions are true.
+                </p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3 text-xs">
+                <p className="font-medium mb-1">How it works:</p>
+                <p className="text-muted-foreground">
+                  AND Gate checks all connected conditions. If ALL are true, follows Yes path. If ANY is false, follows No path.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== OR GATE NODE ===== */}
+          {nodeType === 'orGate' && (
+            <>
+              <div className="space-y-2">
+                <Label>Number of Inputs</Label>
+                <Select
+                  value={String((nodeData.inputCount as number) || 2)}
+                  onValueChange={(v) => handleDataChange('inputCount', parseInt(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2">2 inputs</SelectItem>
+                    <SelectItem value="3">3 inputs</SelectItem>
+                    <SelectItem value="4">4 inputs</SelectItem>
+                    <SelectItem value="5">5 inputs</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Connect condition nodes to inputs. Output is Yes if ANY condition is true.
+                </p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3 text-xs">
+                <p className="font-medium mb-1">How it works:</p>
+                <p className="text-muted-foreground">
+                  OR Gate checks all connected conditions. If ANY is true, follows Yes path. Only if ALL are false, follows No path.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== NOT GATE NODE ===== */}
+          {nodeType === 'notGate' && (
+            <>
+              <div className="rounded-lg bg-muted/50 p-3 text-xs">
+                <p className="font-medium mb-1">How it works:</p>
+                <p className="text-muted-foreground">
+                  NOT Gate inverts the condition from its input. If input is true, output is No. If input is false, output is Yes.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border p-3 text-xs">
+                <p className="font-medium mb-1">Connection:</p>
+                <p className="text-muted-foreground">
+                  Connect a condition node's Yes/No output to this gate's input.
+                </p>
               </div>
             </>
           )}

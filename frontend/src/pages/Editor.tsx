@@ -1,5 +1,5 @@
 import { useCallback, useRef, useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ReactFlow,
@@ -21,6 +21,7 @@ import {
   MoreVertical,
   Terminal,
   Download,
+  Keyboard,
 } from 'lucide-react'
 import { workflowsApi } from '@/lib/api'
 import { DEFAULT_NODE_DATA } from '@/lib/constants'
@@ -57,6 +58,7 @@ export function Editor() {
     nodes,
     edges,
     selectedNodeId,
+    selectedEdgeId,
     isModified,
     setWorkflow,
     setName,
@@ -65,6 +67,8 @@ export function Editor() {
     onConnect,
     addNode,
     selectNode,
+    selectEdge,
+    deleteSelected,
     markSaved,
     resetWorkflow,
   } = useWorkflowStore()
@@ -180,6 +184,46 @@ export function Editor() {
     },
   })
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      const target = event.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return
+      }
+
+      // Delete/Backspace - delete selected node or edge
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selectedNodeId || selectedEdgeId) {
+          event.preventDefault()
+          deleteSelected()
+        }
+      }
+
+      // Ctrl/Cmd + S - Save
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault()
+        if (isModified && !saveMutation.isPending) {
+          saveMutation.mutate()
+        }
+      }
+
+      // Escape - Deselect
+      if (event.key === 'Escape') {
+        selectNode(null)
+      }
+
+      // ? - Open keyboard shortcuts
+      if (event.key === '?' || (event.shiftKey && event.key === '/')) {
+        navigate('/shortcuts')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedNodeId, selectedEdgeId, deleteSelected, selectNode, isModified, saveMutation, navigate])
+
   const handleDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
@@ -227,6 +271,13 @@ export function Editor() {
   const handlePaneClick = useCallback(() => {
     selectNode(null)
   }, [selectNode])
+
+  const handleEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: Edge) => {
+      selectEdge(edge.id)
+    },
+    [selectEdge]
+  )
 
   const handleExport = useCallback(async () => {
     try {
@@ -346,6 +397,12 @@ export function Editor() {
                   <Download className="mr-2 h-4 w-4" />
                   Export Workflow
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/shortcuts">
+                    <Keyboard className="mr-2 h-4 w-4" />
+                    Keyboard Shortcuts
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -360,6 +417,7 @@ export function Editor() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={handleNodeClick}
+            onEdgeClick={handleEdgeClick}
             onPaneClick={handlePaneClick}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
@@ -368,6 +426,7 @@ export function Editor() {
             fitView
             snapToGrid
             snapGrid={[16, 16]}
+            deleteKeyCode={null}
             defaultEdgeOptions={{
               type: 'insertable',
               animated: true,

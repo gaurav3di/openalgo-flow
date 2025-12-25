@@ -195,6 +195,28 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
       icon: <Clock className="h-3.5 w-3.5 text-node-condition" />,
       color: 'bg-node-condition/10',
     },
+    // Logic Gates
+    {
+      type: 'andGate',
+      label: 'AND Gate',
+      description: 'All must be true',
+      icon: <span className="text-[9px] font-bold text-node-condition">AND</span>,
+      color: 'bg-node-condition/10',
+    },
+    {
+      type: 'orGate',
+      label: 'OR Gate',
+      description: 'Any can be true',
+      icon: <span className="text-[9px] font-bold text-node-condition">OR</span>,
+      color: 'bg-node-condition/10',
+    },
+    {
+      type: 'notGate',
+      label: 'NOT Gate',
+      description: 'Invert condition',
+      icon: <span className="text-[9px] font-bold text-node-condition">NOT</span>,
+      color: 'bg-node-condition/10',
+    },
   ]
 
   const data = [

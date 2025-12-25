@@ -26,6 +26,11 @@ import { TimeWindowNode } from './TimeWindowNode'
 import { TimeConditionNode } from './TimeConditionNode'
 import { PriceConditionNode } from './PriceConditionNode'
 
+// Logic Gate Nodes
+import { AndGateNode } from './AndGateNode'
+import { OrGateNode } from './OrGateNode'
+import { NotGateNode } from './NotGateNode'
+
 // Data Nodes
 import { GetQuoteNode } from './GetQuoteNode'
 import { GetDepthNode } from './GetDepthNode'
@@ -69,6 +74,10 @@ export {
   TimeWindowNode,
   TimeConditionNode,
   PriceConditionNode,
+  // Logic Gates
+  AndGateNode,
+  OrGateNode,
+  NotGateNode,
   // Data
   GetQuoteNode,
   GetDepthNode,
@@ -114,6 +123,11 @@ export const nodeTypes = {
   timeWindow: TimeWindowNode,
   timeCondition: TimeConditionNode,
   priceCondition: PriceConditionNode,
+
+  // Logic Gates
+  andGate: AndGateNode,
+  orGate: OrGateNode,
+  notGate: NotGateNode,
 
   // Data
   getQuote: GetQuoteNode,

@@ -73,6 +73,7 @@ class WorkflowContext:
 
     def __init__(self):
         self.variables: Dict[str, Any] = {}
+        self.condition_results: Dict[str, bool] = {}  # Store condition results by node ID
 
     def set_variable(self, name: str, value: Any):
         """Store a variable"""
@@ -81,6 +82,14 @@ class WorkflowContext:
     def get_variable(self, name: str, default: Any = None) -> Any:
         """Get a variable value"""
         return self.variables.get(name, default)
+
+    def set_condition_result(self, node_id: str, result: bool):
+        """Store a condition result for a node"""
+        self.condition_results[node_id] = result
+
+    def get_condition_result(self, node_id: str) -> Optional[bool]:
+        """Get the condition result for a node"""
+        return self.condition_results.get(node_id)
 
     def _get_builtin_variable(self, name: str) -> Optional[str]:
         """Get built-in system variables"""
@@ -792,14 +801,35 @@ class NodeExecutor:
         return result
 
     def execute_delay(self, node_data: dict) -> dict:
-        """Execute Delay node"""
-        delay_ms = int(node_data.get("delayMs", 1000))
-        self.log(f"Waiting for {delay_ms}ms")
+        """Execute Delay node - supports seconds, minutes, hours"""
         import time as time_module
 
-        time_module.sleep(delay_ms / 1000)
+        # New format: delayValue + delayUnit
+        delay_value = node_data.get("delayValue")
+        delay_unit = node_data.get("delayUnit", "seconds")
+
+        if delay_value is not None:
+            delay_value = int(delay_value)
+            # Convert to seconds based on unit
+            if delay_unit == "minutes":
+                delay_seconds = delay_value * 60
+                display = f"{delay_value} minute(s)"
+            elif delay_unit == "hours":
+                delay_seconds = delay_value * 3600
+                display = f"{delay_value} hour(s)"
+            else:  # seconds
+                delay_seconds = delay_value
+                display = f"{delay_value} second(s)"
+        else:
+            # Backward compatibility: old delayMs format
+            delay_ms = int(node_data.get("delayMs", 1000))
+            delay_seconds = delay_ms / 1000
+            display = f"{delay_ms}ms"
+
+        self.log(f"Waiting for {display}")
+        time_module.sleep(delay_seconds)
         self.log(f"Delay complete")
-        return {"status": "success", "message": f"Waited {delay_ms}ms"}
+        return {"status": "success", "message": f"Waited {display}"}
 
     def execute_wait_until(self, node_data: dict) -> dict:
         """Execute Wait Until node - pauses until target time is reached
@@ -1084,6 +1114,129 @@ class NodeExecutor:
         self.log(f"Price check: ltp={ltp} {operator} {threshold} = {condition_met}")
         return {"status": "success", "condition": condition_met, "ltp": ltp}
 
+    def execute_price_alert(self, node_data: dict) -> dict:
+        """Execute Price Alert trigger node - checks if price condition is met
+
+        Uses the quotes() API to fetch current LTP and compare against threshold.
+        Returns condition=True if alert should trigger (follows Yes path).
+        """
+        symbol = self.get_str(node_data, "symbol", "")
+        exchange = self.get_str(node_data, "exchange", "NSE")
+        condition_type = self.get_str(node_data, "condition", "greater_than")
+        price = self.get_float(node_data, "price", 0)
+        price_lower = self.get_float(node_data, "priceLower", 0)
+        price_upper = self.get_float(node_data, "priceUpper", 0)
+        percentage = self.get_float(node_data, "percentage", 0)
+
+        if not symbol:
+            self.log("Price alert: No symbol specified", "error")
+            return {"status": "error", "condition": False, "message": "No symbol specified"}
+
+        # Fetch current quote using SDK
+        self.log(f"Price alert: Fetching quote for {symbol} ({exchange})")
+        result = self.client.get_quotes(symbol=symbol, exchange=exchange)
+
+        if result.get("status") != "success":
+            self.log(f"Price alert: Failed to fetch quote - {result}", "error")
+            return {"status": "error", "condition": False, "message": "Failed to fetch quote"}
+
+        data = result.get("data", {})
+        ltp = float(data.get("ltp", 0))
+        prev_close = float(data.get("prev_close", ltp))
+
+        condition_met = False
+
+        # Evaluate condition based on type
+        if condition_type == "greater_than":
+            condition_met = ltp > price
+            self.log(f"Price alert: {symbol} LTP={ltp} > {price} = {condition_met}")
+
+        elif condition_type == "less_than":
+            condition_met = ltp < price
+            self.log(f"Price alert: {symbol} LTP={ltp} < {price} = {condition_met}")
+
+        elif condition_type == "crossing":
+            # Crossing means price is at or very close to target (within 0.1%)
+            tolerance = price * 0.001
+            condition_met = abs(ltp - price) <= tolerance
+            self.log(f"Price alert: {symbol} LTP={ltp} crossing {price} = {condition_met}")
+
+        elif condition_type == "crossing_up":
+            # Price crossed above threshold (ltp > price and prev was below or equal)
+            condition_met = ltp > price
+            self.log(f"Price alert: {symbol} LTP={ltp} crossing up {price} = {condition_met}")
+
+        elif condition_type == "crossing_down":
+            # Price crossed below threshold
+            condition_met = ltp < price
+            self.log(f"Price alert: {symbol} LTP={ltp} crossing down {price} = {condition_met}")
+
+        elif condition_type == "entering_channel":
+            # Price entered the channel (between lower and upper)
+            condition_met = price_lower <= ltp <= price_upper
+            self.log(f"Price alert: {symbol} LTP={ltp} in channel [{price_lower}, {price_upper}] = {condition_met}")
+
+        elif condition_type == "exiting_channel":
+            # Price exited the channel
+            condition_met = ltp < price_lower or ltp > price_upper
+            self.log(f"Price alert: {symbol} LTP={ltp} outside channel [{price_lower}, {price_upper}] = {condition_met}")
+
+        elif condition_type == "inside_channel":
+            condition_met = price_lower <= ltp <= price_upper
+            self.log(f"Price alert: {symbol} LTP={ltp} inside [{price_lower}, {price_upper}] = {condition_met}")
+
+        elif condition_type == "outside_channel":
+            condition_met = ltp < price_lower or ltp > price_upper
+            self.log(f"Price alert: {symbol} LTP={ltp} outside [{price_lower}, {price_upper}] = {condition_met}")
+
+        elif condition_type == "moving_up":
+            # Price moved up from previous close
+            condition_met = ltp > prev_close
+            self.log(f"Price alert: {symbol} LTP={ltp} > prev_close={prev_close} = {condition_met}")
+
+        elif condition_type == "moving_down":
+            # Price moved down from previous close
+            condition_met = ltp < prev_close
+            self.log(f"Price alert: {symbol} LTP={ltp} < prev_close={prev_close} = {condition_met}")
+
+        elif condition_type == "moving_up_percent":
+            # Price moved up by X% from previous close
+            if prev_close > 0:
+                change_percent = ((ltp - prev_close) / prev_close) * 100
+                condition_met = change_percent >= percentage
+                self.log(f"Price alert: {symbol} change={change_percent:.2f}% >= {percentage}% = {condition_met}")
+            else:
+                condition_met = False
+
+        elif condition_type == "moving_down_percent":
+            # Price moved down by X% from previous close
+            if prev_close > 0:
+                change_percent = ((prev_close - ltp) / prev_close) * 100
+                condition_met = change_percent >= percentage
+                self.log(f"Price alert: {symbol} down {change_percent:.2f}% >= {percentage}% = {condition_met}")
+            else:
+                condition_met = False
+
+        else:
+            self.log(f"Price alert: Unknown condition type '{condition_type}'", "warning")
+
+        # Store the quote data as output variable
+        self.store_output(node_data, {
+            "status": "success",
+            "ltp": ltp,
+            "prev_close": prev_close,
+            "condition_met": condition_met,
+            "symbol": symbol,
+            "exchange": exchange,
+        })
+
+        return {
+            "status": "success",
+            "condition": condition_met,
+            "ltp": ltp,
+            "prev_close": prev_close,
+        }
+
     def execute_time_window(self, node_data: dict) -> dict:
         """Execute Time Window node - returns True/False for condition"""
         start_time_str = node_data.get("startTime", "09:15")
@@ -1170,6 +1323,53 @@ class NodeExecutor:
         }
         return operators.get(operator, False)
 
+    def execute_and_gate(self, node_data: dict, input_results: List[bool]) -> dict:
+        """Execute AND Gate - returns True if ALL inputs are True"""
+        if not input_results:
+            self.log("AND Gate: No input conditions found", "warning")
+            return {"status": "success", "condition": False}
+
+        condition_met = all(input_results)
+        self.log(f"AND Gate: inputs={input_results} -> {condition_met}")
+        return {
+            "status": "success",
+            "condition": condition_met,
+            "inputs": input_results,
+            "gate_type": "AND",
+        }
+
+    def execute_or_gate(self, node_data: dict, input_results: List[bool]) -> dict:
+        """Execute OR Gate - returns True if ANY input is True"""
+        if not input_results:
+            self.log("OR Gate: No input conditions found", "warning")
+            return {"status": "success", "condition": False}
+
+        condition_met = any(input_results)
+        self.log(f"OR Gate: inputs={input_results} -> {condition_met}")
+        return {
+            "status": "success",
+            "condition": condition_met,
+            "inputs": input_results,
+            "gate_type": "OR",
+        }
+
+    def execute_not_gate(self, node_data: dict, input_results: List[bool]) -> dict:
+        """Execute NOT Gate - inverts the input condition"""
+        if not input_results:
+            self.log("NOT Gate: No input condition found", "warning")
+            return {"status": "success", "condition": True}
+
+        # NOT gate typically has a single input
+        input_value = input_results[0] if input_results else False
+        condition_met = not input_value
+        self.log(f"NOT Gate: input={input_value} -> {condition_met}")
+        return {
+            "status": "success",
+            "condition": condition_met,
+            "input": input_value,
+            "gate_type": "NOT",
+        }
+
 
 async def execute_workflow(workflow_id: int) -> dict:
     """Execute a workflow with concurrent execution protection"""
@@ -1227,20 +1427,26 @@ async def execute_workflow(workflow_id: int) -> dict:
                 if not start_node:
                     raise Exception("No start node found")
 
-                # Build edge map for traversal
+                # Build edge map for traversal (source -> outgoing edges)
                 edge_map: Dict[str, List[dict]] = {}
+                # Build reverse edge map (target -> incoming edges) for logic gates
+                incoming_edge_map: Dict[str, List[dict]] = {}
                 for edge in edges:
                     source = edge["source"]
+                    target = edge["target"]
                     if source not in edge_map:
                         edge_map[source] = []
                     edge_map[source].append(edge)
+                    if target not in incoming_edge_map:
+                        incoming_edge_map[target] = []
+                    incoming_edge_map[target].append(edge)
 
                 # Track visited nodes and depth to prevent infinite loops
                 visited_count: Dict[str, int] = {}  # Track how many times each node is visited
 
                 # Execute nodes starting from start node
                 await execute_node_chain(
-                    start_node["id"], nodes, edge_map, executor, context,
+                    start_node["id"], nodes, edge_map, incoming_edge_map, executor, context,
                     visited_count=visited_count, depth=0,
                     workflow_id=workflow_id  # Pass workflow_id for broadcasting
                 )
@@ -1292,6 +1498,7 @@ async def execute_node_chain(
     node_id: str,
     nodes: list,
     edge_map: Dict[str, List[dict]],
+    incoming_edge_map: Dict[str, List[dict]],
     executor: NodeExecutor,
     context: WorkflowContext,
     visited_count: Dict[str, int] = None,
@@ -1303,7 +1510,8 @@ async def execute_node_chain(
     Args:
         node_id: The ID of the node to execute
         nodes: List of all nodes in the workflow
-        edge_map: Map of source node ID to list of edges
+        edge_map: Map of source node ID to list of outgoing edges
+        incoming_edge_map: Map of target node ID to list of incoming edges (for logic gates)
         executor: The node executor instance
         context: The workflow context for variable storage
         visited_count: Dictionary tracking how many times each node has been visited
@@ -1409,11 +1617,41 @@ async def execute_node_chain(
     elif node_type == "timeCondition":
         result = executor.execute_time_condition(node_data)
     elif node_type == "priceAlert":
-        # Price alert is a trigger, just pass through
-        executor.log("Price alert triggered")
+        # Price alert trigger - uses quotes API to check price condition
+        result = executor.execute_price_alert(node_data)
     elif node_type == "group":
         # Group is just a container, pass through
         pass
+    elif node_type == "andGate":
+        # AND Gate - collect input condition results
+        incoming_edges = incoming_edge_map.get(node_id, [])
+        input_results = []
+        for edge in incoming_edges:
+            source_id = edge.get("source")
+            source_result = context.get_condition_result(source_id)
+            if source_result is not None:
+                input_results.append(source_result)
+        result = executor.execute_and_gate(node_data, input_results)
+    elif node_type == "orGate":
+        # OR Gate - collect input condition results
+        incoming_edges = incoming_edge_map.get(node_id, [])
+        input_results = []
+        for edge in incoming_edges:
+            source_id = edge.get("source")
+            source_result = context.get_condition_result(source_id)
+            if source_result is not None:
+                input_results.append(source_result)
+        result = executor.execute_or_gate(node_data, input_results)
+    elif node_type == "notGate":
+        # NOT Gate - invert input condition
+        incoming_edges = incoming_edge_map.get(node_id, [])
+        input_results = []
+        for edge in incoming_edges:
+            source_id = edge.get("source")
+            source_result = context.get_condition_result(source_id)
+            if source_result is not None:
+                input_results.append(source_result)
+        result = executor.execute_not_gate(node_data, input_results)
     else:
         executor.log(f"Unknown node type: {node_type}", "warning")
 
@@ -1438,6 +1676,8 @@ async def execute_node_chain(
     # For condition nodes, check which path to take (Yes/No)
     if result and "condition" in result:
         condition_met = result.get("condition", False)
+        # Store condition result for logic gates to read
+        context.set_condition_result(node_id, condition_met)
         filtered_edges = []
         for edge in edges_to_follow:
             source_handle = edge.get("sourceHandle", "")
@@ -1455,7 +1695,7 @@ async def execute_node_chain(
         target_id = edge.get("target")
         if target_id:
             await execute_node_chain(
-                target_id, nodes, edge_map, executor, context,
+                target_id, nodes, edge_map, incoming_edge_map, executor, context,
                 visited_count=visited_count, depth=depth + 1,
                 workflow_id=workflow_id
             )

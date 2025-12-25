@@ -9,6 +9,7 @@ interface WorkflowState {
   nodes: Node[]
   edges: Edge[]
   selectedNodeId: string | null
+  selectedEdgeId: string | null
   isModified: boolean
 
   // Actions
@@ -27,7 +28,10 @@ interface WorkflowState {
   addNode: (node: Node) => void
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void
   deleteNode: (nodeId: string) => void
+  deleteEdge: (edgeId: string) => void
+  deleteSelected: () => void
   selectNode: (nodeId: string | null) => void
+  selectEdge: (edgeId: string | null) => void
   setName: (name: string) => void
   setDescription: (description: string) => void
   resetWorkflow: () => void
@@ -41,6 +45,7 @@ const initialState = {
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  selectedEdgeId: null,
   isModified: false,
 }
 
@@ -111,7 +116,40 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     isModified: true,
   })),
 
-  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  deleteEdge: (edgeId) => set((state) => ({
+    edges: state.edges.filter((edge) => edge.id !== edgeId),
+    selectedEdgeId: state.selectedEdgeId === edgeId ? null : state.selectedEdgeId,
+    isModified: true,
+  })),
+
+  deleteSelected: () => set((state) => {
+    const { selectedNodeId, selectedEdgeId, nodes, edges } = state
+
+    if (selectedNodeId) {
+      return {
+        nodes: nodes.filter((node) => node.id !== selectedNodeId),
+        edges: edges.filter(
+          (edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId
+        ),
+        selectedNodeId: null,
+        isModified: true,
+      }
+    }
+
+    if (selectedEdgeId) {
+      return {
+        edges: edges.filter((edge) => edge.id !== selectedEdgeId),
+        selectedEdgeId: null,
+        isModified: true,
+      }
+    }
+
+    return state
+  }),
+
+  selectNode: (nodeId) => set({ selectedNodeId: nodeId, selectedEdgeId: null }),
+
+  selectEdge: (edgeId) => set({ selectedEdgeId: edgeId, selectedNodeId: null }),
 
   setName: (name) => set({ name, isModified: true }),
 

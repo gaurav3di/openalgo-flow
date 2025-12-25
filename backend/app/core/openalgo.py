@@ -12,10 +12,17 @@ logger = logging.getLogger(__name__)
 class OpenAlgoClient:
     """Wrapper around the official OpenAlgo Python SDK"""
 
-    def __init__(self, api_key: str, host: str = "http://127.0.0.1:5000"):
+    def __init__(
+        self,
+        api_key: str,
+        host: str = "http://127.0.0.1:5000",
+        ws_url: str = "ws://127.0.0.1:8765"
+    ):
         self.api_key = api_key
         self.host = host.rstrip("/")
-        self.client = api(api_key=api_key, host=host)
+        self.ws_url = ws_url
+        self.client = api(api_key=api_key, host=host, ws_url=ws_url)
+        self._ws_connected = False
 
     def place_order(
         self,
@@ -406,6 +413,95 @@ class OpenAlgoClient:
     def margin(self, positions: list) -> dict:
         """Calculate margin requirements using SDK"""
         return self.client.margin(positions=positions)
+
+    # =========================================================================
+    # WebSocket Methods - Real-time streaming
+    # =========================================================================
+
+    def ws_connect(self) -> bool:
+        """Connect to WebSocket server"""
+        try:
+            self.client.connect()
+            self._ws_connected = True
+            logger.info("WebSocket connected")
+            return True
+        except Exception as e:
+            logger.error(f"WebSocket connection failed: {e}")
+            self._ws_connected = False
+            return False
+
+    def ws_disconnect(self):
+        """Disconnect from WebSocket server"""
+        try:
+            self.client.disconnect()
+            self._ws_connected = False
+            logger.info("WebSocket disconnected")
+        except Exception as e:
+            logger.error(f"WebSocket disconnect error: {e}")
+
+    def ws_is_connected(self) -> bool:
+        """Check if WebSocket is connected"""
+        return self._ws_connected
+
+    def ws_subscribe_ltp(
+        self,
+        instruments: list,
+        callback
+    ):
+        """
+        Subscribe to LTP streaming
+
+        Args:
+            instruments: List of {"exchange": "NSE", "symbol": "RELIANCE"}
+            callback: Function called on data: callback(data)
+        """
+        if not self._ws_connected:
+            self.ws_connect()
+        self.client.subscribe_ltp(instruments, on_data_received=callback)
+
+    def ws_unsubscribe_ltp(self, instruments: list):
+        """Unsubscribe from LTP streaming"""
+        self.client.unsubscribe_ltp(instruments)
+
+    def ws_subscribe_quote(
+        self,
+        instruments: list,
+        callback
+    ):
+        """
+        Subscribe to Quote streaming (OHLC + volume)
+
+        Args:
+            instruments: List of {"exchange": "NSE", "symbol": "RELIANCE"}
+            callback: Function called on data: callback(data)
+        """
+        if not self._ws_connected:
+            self.ws_connect()
+        self.client.subscribe_quote(instruments, on_data_received=callback)
+
+    def ws_unsubscribe_quote(self, instruments: list):
+        """Unsubscribe from Quote streaming"""
+        self.client.unsubscribe_quote(instruments)
+
+    def ws_subscribe_depth(
+        self,
+        instruments: list,
+        callback
+    ):
+        """
+        Subscribe to Depth streaming (order book)
+
+        Args:
+            instruments: List of {"exchange": "NSE", "symbol": "RELIANCE"}
+            callback: Function called on data: callback(data)
+        """
+        if not self._ws_connected:
+            self.ws_connect()
+        self.client.subscribe_depth(instruments, on_data_received=callback)
+
+    def ws_unsubscribe_depth(self, instruments: list):
+        """Unsubscribe from Depth streaming"""
+        self.client.unsubscribe_depth(instruments)
 
     def get_holidays(self, year: int) -> dict:
         """Get market holidays using SDK (deprecated - use holidays)"""

@@ -892,38 +892,73 @@ class NodeExecutor:
         return result
 
     # ===== WEBSOCKET STREAMING NODES =====
-    # Note: WebSocket streaming is async/continuous. For workflow execution,
-    # these nodes fetch the current/latest data from the stream.
-    # For true real-time streaming, use the REST API quotes() as fallback.
+    # WebSocket Streaming Nodes
+    # Uses SDK WebSocket for real-time data. Falls back to REST API if timeout.
 
     def execute_subscribe_ltp(self, node_data: dict) -> dict:
-        """Execute Subscribe LTP node - get real-time LTP data
+        """Execute Subscribe LTP node - stream real-time LTP via WebSocket
 
-        Since workflow execution is sequential, we fetch the current LTP
-        via the quotes API which provides real-time data.
+        Connects to OpenAlgo WebSocket server and subscribes to LTP updates.
+        Waits for first data with timeout, then stores in context variable.
         """
         symbol = self.get_str(node_data, "symbol", "")
         exchange = self.get_str(node_data, "exchange", "NSE")
+        output_var = node_data.get("outputVariable", "ltp")
         self.log(f"Subscribing to LTP stream: {symbol} ({exchange})")
 
         try:
-            # Use quotes API to get real-time LTP
-            quote_data = self.client.get_quotes(symbol=symbol, exchange=exchange)
-            ltp = quote_data.get("data", {}).get("ltp", 0)
+            # Connect to WebSocket if not connected
+            if not self.client.ws_is_connected():
+                self.log("Connecting to WebSocket server...")
+                if not self.client.ws_connect():
+                    raise Exception("Failed to connect to WebSocket server")
 
-            result = {
-                "status": "success",
-                "type": "ltp",
-                "symbol": symbol,
-                "exchange": exchange,
-                "ltp": ltp,
-                "data": quote_data.get("data", {})
-            }
+            # Create event to wait for first data
+            data_received = threading.Event()
+            received_data = {"ltp": 0, "data": {}}
 
-            # Store LTP directly for easy access via {{ltp}} or {{outputVar}}
-            output_var = node_data.get("outputVariable", "ltp")
-            self.context.set_variable(output_var, ltp)
-            self.log(f"LTP for {symbol}: {ltp}")
+            def on_ltp_callback(data):
+                # SDK callback receives data dict with exchange, symbol, ltp
+                sym = data.get("symbol", "")
+                exch = data.get("exchange", "")
+                if sym == symbol and exch == exchange:
+                    received_data["ltp"] = data.get("ltp", 0)
+                    received_data["data"] = data
+                    data_received.set()
+
+            # Subscribe using SDK WebSocket
+            instruments = [{"exchange": exchange, "symbol": symbol}]
+            self.client.ws_subscribe_ltp(instruments, on_ltp_callback)
+
+            # Wait for first data with timeout (5 seconds)
+            if data_received.wait(timeout=5.0):
+                ltp = received_data["ltp"]
+                result = {
+                    "status": "success",
+                    "type": "ltp",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "ltp": ltp,
+                    "data": received_data.get("data", {})
+                }
+                self.context.set_variable(output_var, ltp)
+                self.log(f"LTP for {symbol}: {ltp} (via WebSocket)")
+            else:
+                # Timeout - fallback to REST API
+                self.log("WebSocket timeout, using API fallback", "warning")
+                quote_data = self.client.get_quotes(symbol=symbol, exchange=exchange)
+                ltp = quote_data.get("data", {}).get("ltp", 0)
+                result = {
+                    "status": "success",
+                    "type": "ltp",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "ltp": ltp,
+                    "data": quote_data.get("data", {}),
+                    "fallback": True
+                }
+                self.context.set_variable(output_var, ltp)
+                self.log(f"LTP for {symbol}: {ltp} (via API fallback)")
 
         except Exception as e:
             self.log(f"Failed to get LTP: {e}", "error")
@@ -939,33 +974,81 @@ class NodeExecutor:
         return result
 
     def execute_subscribe_quote(self, node_data: dict) -> dict:
-        """Execute Subscribe Quote node - get real-time quote data (OHLC + volume)"""
+        """Execute Subscribe Quote node - stream real-time quote via WebSocket
+
+        Connects to OpenAlgo WebSocket and subscribes to quote updates (OHLC + volume).
+        """
         symbol = self.get_str(node_data, "symbol", "")
         exchange = self.get_str(node_data, "exchange", "NSE")
+        output_var = node_data.get("outputVariable", "quote")
         self.log(f"Subscribing to Quote stream: {symbol} ({exchange})")
 
         try:
-            # Use quotes API to get real-time quote data
-            quote_data = self.client.get_quotes(symbol=symbol, exchange=exchange)
-            data = quote_data.get("data", {})
+            # Connect to WebSocket if not connected
+            if not self.client.ws_is_connected():
+                self.log("Connecting to WebSocket server...")
+                if not self.client.ws_connect():
+                    raise Exception("Failed to connect to WebSocket server")
 
-            result = {
-                "status": "success",
-                "type": "quote",
-                "symbol": symbol,
-                "exchange": exchange,
-                "ltp": data.get("ltp", 0),
-                "open": data.get("open", 0),
-                "high": data.get("high", 0),
-                "low": data.get("low", 0),
-                "volume": data.get("volume", 0),
-                "bid": data.get("bid", 0),
-                "ask": data.get("ask", 0),
-                "prev_close": data.get("prev_close", 0),
-                "data": data
-            }
+            # Create event to wait for first data
+            data_received = threading.Event()
+            received_data = {"data": {}}
 
-            self.log(f"Quote for {symbol}: LTP={data.get('ltp', 0)}")
+            def on_quote_callback(data):
+                # SDK callback receives quote data with OHLC
+                sym = data.get("symbol", "")
+                exch = data.get("exchange", "")
+                if sym == symbol and exch == exchange:
+                    received_data["data"] = data
+                    data_received.set()
+
+            # Subscribe using SDK WebSocket
+            instruments = [{"exchange": exchange, "symbol": symbol}]
+            self.client.ws_subscribe_quote(instruments, on_quote_callback)
+
+            # Wait for first data with timeout (5 seconds)
+            if data_received.wait(timeout=5.0):
+                data = received_data["data"]
+                result = {
+                    "status": "success",
+                    "type": "quote",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "ltp": data.get("ltp", 0),
+                    "open": data.get("open", 0),
+                    "high": data.get("high", 0),
+                    "low": data.get("low", 0),
+                    "volume": data.get("volume", 0),
+                    "bid": data.get("bid", 0),
+                    "ask": data.get("ask", 0),
+                    "prev_close": data.get("prev_close", 0),
+                    "data": data
+                }
+                self.context.set_variable(output_var, data)
+                self.log(f"Quote for {symbol}: LTP={data.get('ltp', 0)} (via WebSocket)")
+            else:
+                # Timeout - fallback to REST API
+                self.log("WebSocket timeout, using API fallback", "warning")
+                quote_data = self.client.get_quotes(symbol=symbol, exchange=exchange)
+                data = quote_data.get("data", {})
+                result = {
+                    "status": "success",
+                    "type": "quote",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "ltp": data.get("ltp", 0),
+                    "open": data.get("open", 0),
+                    "high": data.get("high", 0),
+                    "low": data.get("low", 0),
+                    "volume": data.get("volume", 0),
+                    "bid": data.get("bid", 0),
+                    "ask": data.get("ask", 0),
+                    "prev_close": data.get("prev_close", 0),
+                    "data": data,
+                    "fallback": True
+                }
+                self.context.set_variable(output_var, data)
+                self.log(f"Quote for {symbol}: LTP={data.get('ltp', 0)} (via API fallback)")
 
         except Exception as e:
             self.log(f"Failed to get Quote: {e}", "error")
@@ -981,30 +1064,75 @@ class NodeExecutor:
         return result
 
     def execute_subscribe_depth(self, node_data: dict) -> dict:
-        """Execute Subscribe Depth node - get real-time depth data (order book)"""
+        """Execute Subscribe Depth node - stream real-time depth via WebSocket
+
+        Connects to OpenAlgo WebSocket and subscribes to depth updates (order book).
+        """
         symbol = self.get_str(node_data, "symbol", "")
         exchange = self.get_str(node_data, "exchange", "NSE")
+        output_var = node_data.get("outputVariable", "depth")
         self.log(f"Subscribing to Depth stream: {symbol} ({exchange})")
 
         try:
-            # Use depth API to get real-time order book
-            depth_data = self.client.get_depth(symbol=symbol, exchange=exchange)
-            data = depth_data.get("data", {})
+            # Connect to WebSocket if not connected
+            if not self.client.ws_is_connected():
+                self.log("Connecting to WebSocket server...")
+                if not self.client.ws_connect():
+                    raise Exception("Failed to connect to WebSocket server")
 
-            result = {
-                "status": "success",
-                "type": "depth",
-                "symbol": symbol,
-                "exchange": exchange,
-                "bids": data.get("bids", []),
-                "asks": data.get("asks", []),
-                "totalbuyqty": data.get("totalbuyqty", 0),
-                "totalsellqty": data.get("totalsellqty", 0),
-                "ltp": data.get("ltp", 0),
-                "data": data
-            }
+            # Create event to wait for first data
+            data_received = threading.Event()
+            received_data = {"data": {}}
 
-            self.log(f"Depth for {symbol}: {len(data.get('bids', []))} bids, {len(data.get('asks', []))} asks")
+            def on_depth_callback(data):
+                # SDK callback receives depth data with bids/asks
+                sym = data.get("symbol", "")
+                exch = data.get("exchange", "")
+                if sym == symbol and exch == exchange:
+                    received_data["data"] = data
+                    data_received.set()
+
+            # Subscribe using SDK WebSocket
+            instruments = [{"exchange": exchange, "symbol": symbol}]
+            self.client.ws_subscribe_depth(instruments, on_depth_callback)
+
+            # Wait for first data with timeout (5 seconds)
+            if data_received.wait(timeout=5.0):
+                data = received_data["data"]
+                result = {
+                    "status": "success",
+                    "type": "depth",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "bids": data.get("bids", []),
+                    "asks": data.get("asks", []),
+                    "totalbuyqty": data.get("totalbuyqty", 0),
+                    "totalsellqty": data.get("totalsellqty", 0),
+                    "ltp": data.get("ltp", 0),
+                    "data": data
+                }
+                self.context.set_variable(output_var, data)
+                self.log(f"Depth for {symbol}: {len(data.get('bids', []))} bids, {len(data.get('asks', []))} asks (via WebSocket)")
+            else:
+                # Timeout - fallback to REST API
+                self.log("WebSocket timeout, using API fallback", "warning")
+                depth_data = self.client.get_depth(symbol=symbol, exchange=exchange)
+                data = depth_data.get("data", {})
+                result = {
+                    "status": "success",
+                    "type": "depth",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "bids": data.get("bids", []),
+                    "asks": data.get("asks", []),
+                    "totalbuyqty": data.get("totalbuyqty", 0),
+                    "totalsellqty": data.get("totalsellqty", 0),
+                    "ltp": data.get("ltp", 0),
+                    "data": data,
+                    "fallback": True
+                }
+                self.context.set_variable(output_var, data)
+                self.log(f"Depth for {symbol}: {len(data.get('bids', []))} bids (via API fallback)")
 
         except Exception as e:
             self.log(f"Failed to get Depth: {e}", "error")
@@ -1020,18 +1148,63 @@ class NodeExecutor:
         return result
 
     def execute_unsubscribe(self, node_data: dict) -> dict:
-        """Execute Unsubscribe node - cleanup (no-op for REST-based approach)"""
+        """Execute Unsubscribe node - unsubscribe from WebSocket streams
+
+        Unsubscribes from specified stream type (ltp/quote/depth/all).
+        """
         symbol = self.get_str(node_data, "symbol", "")
         exchange = self.get_str(node_data, "exchange", "NSE")
         stream_type = self.get_str(node_data, "streamType", "all")
         self.log(f"Unsubscribing from {stream_type} stream: {symbol or 'all'} ({exchange})")
 
-        result = {
-            "status": "unsubscribed",
-            "type": stream_type,
-            "symbol": symbol or "all",
-            "exchange": exchange
-        }
+        try:
+            if self.client.ws_is_connected():
+                instruments = [{"exchange": exchange, "symbol": symbol}] if symbol else []
+
+                if stream_type == "ltp" or stream_type == "all":
+                    if instruments:
+                        self.client.ws_unsubscribe_ltp(instruments)
+                        self.log(f"Unsubscribed from LTP: {symbol}")
+
+                if stream_type == "quote" or stream_type == "all":
+                    if instruments:
+                        self.client.ws_unsubscribe_quote(instruments)
+                        self.log(f"Unsubscribed from Quote: {symbol}")
+
+                if stream_type == "depth" or stream_type == "all":
+                    if instruments:
+                        self.client.ws_unsubscribe_depth(instruments)
+                        self.log(f"Unsubscribed from Depth: {symbol}")
+
+                # If unsubscribing all with no symbol, disconnect entirely
+                if stream_type == "all" and not symbol:
+                    self.client.ws_disconnect()
+                    self.log("Disconnected from WebSocket server")
+
+                result = {
+                    "status": "unsubscribed",
+                    "type": stream_type,
+                    "symbol": symbol or "all",
+                    "exchange": exchange
+                }
+            else:
+                self.log("WebSocket not connected, nothing to unsubscribe")
+                result = {
+                    "status": "not_connected",
+                    "type": stream_type,
+                    "symbol": symbol or "all",
+                    "exchange": exchange
+                }
+        except Exception as e:
+            self.log(f"Unsubscribe error: {e}", "error")
+            result = {
+                "status": "error",
+                "type": stream_type,
+                "symbol": symbol or "all",
+                "exchange": exchange,
+                "error": str(e)
+            }
+
         return result
 
     # ===== RISK MANAGEMENT NODES =====

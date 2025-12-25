@@ -947,6 +947,20 @@ Output: apiResponse
 
 Live data streaming via WebSocket connection for low-latency trading.
 
+**How It Works**:
+- Connects to OpenAlgo WebSocket server (default: `ws://127.0.0.1:8765`)
+- Subscribes using official OpenAlgo SDK methods
+- Waits for first data tick (5 second timeout)
+- Falls back to REST API if WebSocket times out
+- Stores data in output variable for workflow use
+
+**WebSocket vs REST API**:
+| Aspect | WebSocket | REST API (Fallback) |
+|--------|-----------|---------------------|
+| Latency | Ultra-low (real-time) | Higher (HTTP request) |
+| Connection | Persistent | Per-request |
+| Use Case | Active trading | Occasional queries |
+
 ### Subscribe LTP
 
 **Purpose**: Subscribe to real-time Last Traded Price streaming.
@@ -956,11 +970,18 @@ Live data streaming via WebSocket connection for low-latency trading.
 |-------|-------------|
 | Symbol | Symbol to stream (supports `{{variable}}`) |
 | Exchange | Exchange |
-| Output Variable | Variable name (updates in real-time) |
+| Output Variable | Variable name (default: `ltp`) |
+
+**Behavior**:
+1. Connects to WebSocket if not connected
+2. Sends subscribe message for LTP
+3. Waits for first LTP tick (5 sec timeout)
+4. Stores LTP value in output variable
+5. Falls back to quotes API if timeout
 
 **Output Access**:
 ```
-{{ltp}}  - Current LTP (updates automatically)
+{{ltp}}  - Current LTP value (number)
 ```
 
 **Use Cases**:
@@ -979,7 +1000,14 @@ Live data streaming via WebSocket connection for low-latency trading.
 |-------|-------------|
 | Symbol | Symbol to stream (supports `{{variable}}`) |
 | Exchange | Exchange |
-| Output Variable | Variable name (updates in real-time) |
+| Output Variable | Variable name (default: `quote`) |
+
+**Behavior**:
+1. Connects to WebSocket if not connected
+2. Sends subscribe message for Quote
+3. Waits for first quote tick (5 sec timeout)
+4. Stores quote object in output variable
+5. Falls back to quotes API if timeout
 
 **Output Access**:
 ```
@@ -1003,7 +1031,14 @@ Live data streaming via WebSocket connection for low-latency trading.
 |-------|-------------|
 | Symbol | Symbol to stream (supports `{{variable}}`) |
 | Exchange | Exchange |
-| Output Variable | Variable name (updates in real-time) |
+| Output Variable | Variable name (default: `depth`) |
+
+**Behavior**:
+1. Connects to WebSocket if not connected
+2. Sends subscribe message for Depth
+3. Waits for first depth tick (5 sec timeout)
+4. Stores depth object in output variable
+5. Falls back to depth API if timeout
 
 **Output Access**:
 ```
@@ -1019,7 +1054,7 @@ Live data streaming via WebSocket connection for low-latency trading.
 
 ### Unsubscribe
 
-**Purpose**: Stop real-time streaming for a symbol.
+**Purpose**: Stop real-time streaming and clean up WebSocket connection.
 
 **Configuration**:
 | Field | Description |
@@ -1027,6 +1062,11 @@ Live data streaming via WebSocket connection for low-latency trading.
 | Stream Type | `LTP Only`, `Quote Only`, `Depth Only`, or `All Streams` |
 | Symbol | Symbol to unsubscribe (leave empty for all) |
 | Exchange | Exchange |
+
+**Behavior**:
+- Unsubscribes from specified stream type
+- If "All Streams" with no symbol: disconnects WebSocket entirely
+- Safe to call even if not connected
 
 ---
 

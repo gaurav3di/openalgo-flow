@@ -70,22 +70,22 @@ export const authApi = {
     is_authenticated: boolean;
   }>(`${API_ENDPOINTS.AUTH}/status`, {}, false),
 
-  setup: (password: string) => request<{
+  setup: (username: string, password: string) => request<{
     access_token: string;
     token_type: string;
     expires_in: number;
   }>(`${API_ENDPOINTS.AUTH}/setup`, {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   }, false),
 
-  login: (password: string) => request<{
+  login: (username: string, password: string) => request<{
     access_token: string;
     token_type: string;
     expires_in: number;
   }>(`${API_ENDPOINTS.AUTH}/login`, {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   }, false),
 
   logout: () => request<{ status: string; message: string }>(
@@ -96,6 +96,11 @@ export const authApi = {
   verify: () => request<{ status: string; message: string }>(
     `${API_ENDPOINTS.AUTH}/verify`
   ),
+
+  getProfile: () => request<{
+    username: string;
+    created_at: string;
+  }>(`${API_ENDPOINTS.AUTH}/profile`),
 
   changePassword: (currentPassword: string, newPassword: string) => request<{
     status: string;

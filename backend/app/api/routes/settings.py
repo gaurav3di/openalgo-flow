@@ -1,17 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import logging
 
 from app.core.database import get_db
 from app.core.openalgo import OpenAlgoClient
 from app.core.auth import get_current_admin
 from app.core.rate_limit import limiter, API_LIMIT
+from app.core.encryption import encrypt_value, decrypt_safe
 from app.models.settings import AppSettings
 from app.schemas.settings import (
     SettingsUpdate,
     SettingsPublic,
     ConnectionTestResponse
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -56,7 +60,12 @@ async def update_settings(
     settings = await get_or_create_settings(db)
 
     if settings_update.openalgo_api_key is not None:
-        settings.openalgo_api_key = settings_update.openalgo_api_key
+        # Encrypt the API key before storing
+        if settings_update.openalgo_api_key:
+            settings.openalgo_api_key = encrypt_value(settings_update.openalgo_api_key)
+            logger.info("API key encrypted and stored")
+        else:
+            settings.openalgo_api_key = None
     if settings_update.openalgo_host:
         settings.openalgo_host = settings_update.openalgo_host
     if settings_update.openalgo_ws_url:
@@ -87,8 +96,16 @@ async def test_connection(
             message="API key not configured"
         )
 
+    # Decrypt the API key for use
+    api_key = decrypt_safe(settings.openalgo_api_key)
+    if not api_key:
+        return ConnectionTestResponse(
+            success=False,
+            message="Failed to decrypt API key. Please re-enter your API key."
+        )
+
     client = OpenAlgoClient(
-        api_key=settings.openalgo_api_key,
+        api_key=api_key,
         host=settings.openalgo_host
     )
 

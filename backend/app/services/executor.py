@@ -3,21 +3,39 @@ Workflow Executor Service
 Executes workflow nodes using the OpenAlgo Python SDK
 """
 from datetime import datetime, time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
 import asyncio
 import re
 import json
+import threading
 
 from app.core.database import async_session_maker
 from app.core.openalgo import OpenAlgoClient
 from app.core.scheduler import workflow_scheduler
+from app.core.encryption import decrypt_safe
 from app.models.workflow import Workflow, WorkflowExecution
 from app.models.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+
+# Execution locks to prevent concurrent execution of the same workflow
+_workflow_locks: Dict[int, asyncio.Lock] = {}
+_workflow_locks_lock = threading.Lock()  # Thread-safe access to locks dict
+
+# Execution limits
+MAX_NODE_DEPTH = 100  # Maximum recursion depth for node chain
+MAX_NODE_VISITS = 500  # Maximum total node visits per execution
+
+
+def get_workflow_lock(workflow_id: int) -> asyncio.Lock:
+    """Get or create an asyncio lock for a workflow"""
+    with _workflow_locks_lock:
+        if workflow_id not in _workflow_locks:
+            _workflow_locks[workflow_id] = asyncio.Lock()
+        return _workflow_locks[workflow_id]
 
 
 class WorkflowContext:
@@ -92,8 +110,14 @@ async def get_openalgo_client() -> Optional[OpenAlgoClient]:
         if not settings or not settings.openalgo_api_key:
             return None
 
+        # Decrypt the API key
+        api_key = decrypt_safe(settings.openalgo_api_key)
+        if not api_key:
+            logger.error("Failed to decrypt API key")
+            return None
+
         return OpenAlgoClient(
-            api_key=settings.openalgo_api_key, host=settings.openalgo_host
+            api_key=api_key, host=settings.openalgo_host
         )
 
 
@@ -953,84 +977,101 @@ class NodeExecutor:
 
 
 async def execute_workflow(workflow_id: int) -> dict:
-    """Execute a workflow"""
-    async with async_session_maker() as db:
-        result = await db.execute(select(Workflow).where(Workflow.id == workflow_id))
-        workflow = result.scalar_one_or_none()
+    """Execute a workflow with concurrent execution protection"""
+    # Get the lock for this workflow
+    lock = get_workflow_lock(workflow_id)
 
-        if not workflow:
-            return {"status": "error", "message": "Workflow not found"}
+    # Try to acquire the lock without blocking
+    if lock.locked():
+        logger.warning(f"Workflow {workflow_id} is already running, skipping execution")
+        return {
+            "status": "error",
+            "message": "Workflow is already running. Please wait for the current execution to complete.",
+            "already_running": True,
+        }
 
-        execution = WorkflowExecution(
-            workflow_id=workflow_id,
-            status="running",
-            started_at=datetime.utcnow(),
-            logs=[],
-        )
-        db.add(execution)
-        await db.commit()
-        await db.refresh(execution)
+    async with lock:
+        async with async_session_maker() as db:
+            result = await db.execute(select(Workflow).where(Workflow.id == workflow_id))
+            workflow = result.scalar_one_or_none()
 
-        logs = []
-        context = WorkflowContext()
+            if not workflow:
+                return {"status": "error", "message": "Workflow not found"}
 
-        try:
-            client = await get_openalgo_client()
-            if not client:
-                raise Exception("OpenAlgo not configured")
-
-            executor = NodeExecutor(client, context, logs)
-            executor.log(f"Starting workflow: {workflow.name}")
-
-            nodes = workflow.nodes or []
-            edges = workflow.edges or []
-
-            start_node = next((n for n in nodes if n.get("type") == "start"), None)
-            if not start_node:
-                raise Exception("No start node found")
-
-            # Build edge map for traversal
-            edge_map: Dict[str, List[dict]] = {}
-            for edge in edges:
-                source = edge["source"]
-                if source not in edge_map:
-                    edge_map[source] = []
-                edge_map[source].append(edge)
-
-            # Execute nodes starting from start node
-            await execute_node_chain(
-                start_node["id"], nodes, edge_map, executor, context
+            execution = WorkflowExecution(
+                workflow_id=workflow_id,
+                status="running",
+                started_at=datetime.utcnow(),
+                logs=[],
             )
-
-            execution.status = "completed"
-            execution.completed_at = datetime.utcnow()
-            execution.logs = logs
+            db.add(execution)
             await db.commit()
+            await db.refresh(execution)
 
-            return {
-                "status": "success",
-                "message": "Workflow executed successfully",
-                "execution_id": execution.id,
-                "logs": logs,
-            }
+            logs = []
+            context = WorkflowContext()
 
-        except Exception as e:
-            logger.error(f"Workflow execution failed: {e}")
-            logs.append(
-                {
-                    "time": datetime.utcnow().isoformat(),
-                    "message": f"Error: {str(e)}",
-                    "level": "error",
+            try:
+                client = await get_openalgo_client()
+                if not client:
+                    raise Exception("OpenAlgo not configured")
+
+                executor = NodeExecutor(client, context, logs)
+                executor.log(f"Starting workflow: {workflow.name}")
+
+                nodes = workflow.nodes or []
+                edges = workflow.edges or []
+
+                start_node = next((n for n in nodes if n.get("type") == "start"), None)
+                if not start_node:
+                    raise Exception("No start node found")
+
+                # Build edge map for traversal
+                edge_map: Dict[str, List[dict]] = {}
+                for edge in edges:
+                    source = edge["source"]
+                    if source not in edge_map:
+                        edge_map[source] = []
+                    edge_map[source].append(edge)
+
+                # Track visited nodes and depth to prevent infinite loops
+                visited_count: Dict[str, int] = {}  # Track how many times each node is visited
+
+                # Execute nodes starting from start node
+                await execute_node_chain(
+                    start_node["id"], nodes, edge_map, executor, context,
+                    visited_count=visited_count, depth=0
+                )
+
+                execution.status = "completed"
+                execution.completed_at = datetime.utcnow()
+                execution.logs = logs
+                await db.commit()
+
+                return {
+                    "status": "success",
+                    "message": "Workflow executed successfully",
+                    "execution_id": execution.id,
+                    "logs": logs,
                 }
-            )
 
-            execution.status = "failed"
-            execution.completed_at = datetime.utcnow()
-            execution.error = str(e)
-            execution.logs = logs
-            await db.commit()
+            except Exception as e:
+                logger.error(f"Workflow execution failed: {e}")
+                logs.append(
+                    {
+                        "time": datetime.utcnow().isoformat(),
+                        "message": f"Error: {str(e)}",
+                        "level": "error",
+                    }
+                )
 
-            return {"status": "error", "message": str(e), "execution_id": execution.id, "logs": logs}
+                execution.status = "failed"
+                execution.completed_at = datetime.utcnow()
+                execution.error = str(e)
+                execution.logs = logs
+                await db.commit()
+
+                return {"status": "error", "message": str(e), "execution_id": execution.id, "logs": logs}
 
 
 async def execute_node_chain(
@@ -1039,8 +1080,53 @@ async def execute_node_chain(
     edge_map: Dict[str, List[dict]],
     executor: NodeExecutor,
     context: WorkflowContext,
+    visited_count: Dict[str, int] = None,
+    depth: int = 0,
 ):
-    """Execute a chain of nodes starting from the given node"""
+    """Execute a chain of nodes starting from the given node
+
+    Args:
+        node_id: The ID of the node to execute
+        nodes: List of all nodes in the workflow
+        edge_map: Map of source node ID to list of edges
+        executor: The node executor instance
+        context: The workflow context for variable storage
+        visited_count: Dictionary tracking how many times each node has been visited
+        depth: Current recursion depth
+
+    Raises:
+        Exception: If max depth or max visits exceeded (infinite loop protection)
+    """
+    # Initialize visited_count if not provided (backward compatibility)
+    if visited_count is None:
+        visited_count = {}
+
+    # Check depth limit to prevent stack overflow
+    if depth > MAX_NODE_DEPTH:
+        raise Exception(
+            f"Maximum node depth ({MAX_NODE_DEPTH}) exceeded. "
+            "This may indicate a circular connection in your workflow."
+        )
+
+    # Check total visits limit
+    total_visits = sum(visited_count.values())
+    if total_visits >= MAX_NODE_VISITS:
+        raise Exception(
+            f"Maximum node visits ({MAX_NODE_VISITS}) exceeded. "
+            "This may indicate an infinite loop in your workflow."
+        )
+
+    # Track this node visit
+    visited_count[node_id] = visited_count.get(node_id, 0) + 1
+
+    # Warn if a node is visited too many times (possible loop)
+    if visited_count[node_id] > 10:
+        executor.log(
+            f"Warning: Node {node_id} has been visited {visited_count[node_id]} times. "
+            "Check for unintended loops.",
+            "warning"
+        )
+
     node = next((n for n in nodes if n["id"] == node_id), None)
     if not node:
         return
@@ -1137,7 +1223,10 @@ async def execute_node_chain(
     for edge in edges_to_follow:
         target_id = edge.get("target")
         if target_id:
-            await execute_node_chain(target_id, nodes, edge_map, executor, context)
+            await execute_node_chain(
+                target_id, nodes, edge_map, executor, context,
+                visited_count=visited_count, depth=depth + 1
+            )
 
 
 def execute_workflow_sync(workflow_id: int):

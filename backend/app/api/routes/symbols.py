@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.openalgo import OpenAlgoClient
 from app.core.auth import get_current_admin
 from app.core.rate_limit import limiter, READ_LIMIT
+from app.core.encryption import decrypt_safe
 from app.models.settings import AppSettings
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
@@ -18,8 +19,13 @@ async def get_openalgo_client(db: AsyncSession = Depends(get_db)) -> OpenAlgoCli
     if not settings or not settings.openalgo_api_key:
         raise HTTPException(status_code=400, detail="OpenAlgo not configured")
 
+    # Decrypt the API key
+    api_key = decrypt_safe(settings.openalgo_api_key)
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Failed to decrypt API key. Please re-enter your API key.")
+
     return OpenAlgoClient(
-        api_key=settings.openalgo_api_key,
+        api_key=api_key,
         host=settings.openalgo_host
     )
 

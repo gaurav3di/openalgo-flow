@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Settings, LayoutDashboard, Workflow, LogOut } from 'lucide-react'
+import { Settings, LayoutDashboard, Workflow, LogOut, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -18,7 +19,7 @@ export function Header() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const { is_configured } = useSettingsStore()
-  const logout = useAuthStore((state) => state.logout)
+  const { username, logout } = useAuthStore()
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -85,12 +86,25 @@ export function Header() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                  A
+                  {username ? username.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <span className="hidden sm:inline">Admin</span>
+                <span className="hidden sm:inline">{username || 'User'}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium">{username || 'User'}</p>
+                  <p className="text-xs text-muted-foreground">Administrator</p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/settings" className="flex items-center gap-2">
                   <Settings className="h-4 w-4" />

@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Loader2, Lock, Shield, Eye, EyeOff, Workflow, Zap, LineChart, Bot } from 'lucide-react'
+import { Loader2, Lock, Shield, Eye, EyeOff, Workflow, Zap, LineChart, Bot, User } from 'lucide-react'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
@@ -42,8 +42,9 @@ const FEATURES = [
 export function Login() {
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { setToken, setSetupComplete, isAuthenticated } = useAuthStore()
+  const { setToken, setSetupComplete, setUsername, isAuthenticated } = useAuthStore()
 
+  const [username, setUsernameInput] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -63,12 +64,14 @@ export function Login() {
 
   const isSetupMode = authStatus && !authStatus.is_setup_complete
 
-  // Setup mutation (for first-time password creation)
+  // Setup mutation (for first-time account creation)
   const setupMutation = useMutation({
-    mutationFn: (password: string) => authApi.setup(password),
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      authApi.setup(username, password),
     onSuccess: (data) => {
       setToken(data.access_token)
       setSetupComplete(true)
+      setUsername(username)
       toast({
         title: 'Welcome to OpenAlgo Flow!',
         description: 'Your account has been created. Let\'s configure your settings.',
@@ -88,9 +91,11 @@ export function Login() {
 
   // Login mutation
   const loginMutation = useMutation({
-    mutationFn: (password: string) => authApi.login(password),
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      authApi.login(username, password),
     onSuccess: (data) => {
       setToken(data.access_token)
+      setUsername(username)
       toast({
         title: 'Welcome back!',
         description: 'Login successful.',
@@ -112,6 +117,15 @@ export function Login() {
     e.preventDefault()
 
     if (isSetupMode) {
+      if (username.length < 3) {
+        toast({
+          title: 'Username too short',
+          description: 'Username must be at least 3 characters.',
+          variant: 'destructive',
+        })
+        return
+      }
+
       if (password !== confirmPassword) {
         toast({
           title: 'Passwords do not match',
@@ -132,14 +146,24 @@ export function Login() {
         return
       }
 
-      setupMutation.mutate(password)
+      setupMutation.mutate({ username, password })
     } else {
-      loginMutation.mutate(password)
+      if (!username || !password) {
+        toast({
+          title: 'Missing credentials',
+          description: 'Please enter both username and password.',
+          variant: 'destructive',
+        })
+        return
+      }
+      loginMutation.mutate({ username, password })
     }
   }
 
-  // Check if password meets minimum requirements for submit button
-  const isPasswordValid = isSetupMode ? getPasswordScore(password) >= 5 && password === confirmPassword : password.length > 0
+  // Check if form is valid for submit button
+  const isFormValid = isSetupMode
+    ? username.length >= 3 && getPasswordScore(password) >= 5 && password === confirmPassword
+    : username.length > 0 && password.length > 0
 
   const isSubmitting = setupMutation.isPending || loginMutation.isPending
 
@@ -239,6 +263,27 @@ export function Login() {
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
+                <Label htmlFor="username" className="text-sm font-medium">
+                  {isSetupMode ? 'Create Username' : 'Username'}
+                </Label>
+                <Input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  placeholder={isSetupMode ? 'Choose a username' : 'Enter your username'}
+                  required
+                  minLength={isSetupMode ? 3 : 1}
+                  maxLength={50}
+                  autoComplete="username"
+                  className="h-11"
+                />
+                {isSetupMode && username.length > 0 && username.length < 3 && (
+                  <p className="text-xs text-sell">Username must be at least 3 characters</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">
                   {isSetupMode ? 'Create Password' : 'Password'}
                 </Label>
@@ -297,7 +342,7 @@ export function Login() {
               <Button
                 type="submit"
                 className="w-full h-11 btn-glow text-base"
-                disabled={isSubmitting || !isPasswordValid}
+                disabled={isSubmitting || !isFormValid}
               >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isSetupMode ? 'Create Account' : 'Login'}

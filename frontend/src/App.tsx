@@ -10,6 +10,7 @@ import { Dashboard } from '@/pages/Dashboard'
 import { Settings } from '@/pages/Settings'
 import { Editor } from '@/pages/Editor'
 import { Login } from '@/pages/Login'
+import { Profile } from '@/pages/Profile'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Loader2 } from 'lucide-react'
 
@@ -94,6 +95,7 @@ export default function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/editor/:id" element={<EditorWrapper />} />
         </Route>
 

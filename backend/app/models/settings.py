@@ -7,6 +7,7 @@ class AppSettings(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     # Admin authentication
+    admin_username = Column(String, nullable=True)
     admin_password_hash = Column(String, nullable=True)
     is_setup_complete = Column(Boolean, default=False)
     # OpenAlgo settings

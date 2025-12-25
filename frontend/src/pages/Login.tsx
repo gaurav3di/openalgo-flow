@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PasswordStrength, validatePassword, getPasswordScore } from '@/components/ui/password-strength'
 import { useToast } from '@/hooks/use-toast'
 
 const FEATURES = [
@@ -119,19 +120,26 @@ export function Login() {
         })
         return
       }
-      if (password.length < 8) {
+
+      // Validate password against all rules
+      const validation = validatePassword(password)
+      if (!validation.isValid) {
         toast({
-          title: 'Password too short',
-          description: 'Password must be at least 8 characters long.',
+          title: 'Password does not meet requirements',
+          description: `Missing: ${validation.errors.slice(0, 2).join(', ')}${validation.errors.length > 2 ? '...' : ''}`,
           variant: 'destructive',
         })
         return
       }
+
       setupMutation.mutate(password)
     } else {
       loginMutation.mutate(password)
     }
   }
+
+  // Check if password meets minimum requirements for submit button
+  const isPasswordValid = isSetupMode ? getPasswordScore(password) >= 5 && password === confirmPassword : password.length > 0
 
   const isSubmitting = setupMutation.isPending || loginMutation.isPending
 
@@ -258,11 +266,8 @@ export function Login() {
                     )}
                   </button>
                 </div>
-                {isSetupMode && (
-                  <p className="text-xs text-muted-foreground">
-                    Must be at least 8 characters
-                  </p>
-                )}
+                {/* Password strength meter - only in setup mode */}
+                {isSetupMode && <PasswordStrength password={password} />}
               </div>
 
               {isSetupMode && (
@@ -280,13 +285,19 @@ export function Login() {
                     autoComplete="new-password"
                     className="h-11"
                   />
+                  {confirmPassword && password !== confirmPassword && (
+                    <p className="text-xs text-sell">Passwords do not match</p>
+                  )}
+                  {confirmPassword && password === confirmPassword && confirmPassword.length > 0 && (
+                    <p className="text-xs text-buy">Passwords match</p>
+                  )}
                 </div>
               )}
 
               <Button
                 type="submit"
                 className="w-full h-11 btn-glow text-base"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !isPasswordValid}
               >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isSetupMode ? 'Create Account' : 'Login'}

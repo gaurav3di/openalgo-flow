@@ -3,7 +3,7 @@ Workflow Executor Service
 Executes workflow nodes using the OpenAlgo Python SDK
 """
 from datetime import datetime, time
-from typing import Optional, Dict, Any, List, Set
+from typing import Optional, Dict, Any, List, Set, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
@@ -18,8 +18,38 @@ from app.core.scheduler import workflow_scheduler
 from app.core.encryption import decrypt_safe
 from app.models.workflow import Workflow, WorkflowExecution
 from app.models.settings import AppSettings
+from app.api.websocket import broadcast_execution_update
 
 logger = logging.getLogger(__name__)
+
+
+def parse_time_string(time_str: str, default_hour: int = 9, default_minute: int = 15) -> Tuple[int, int, int]:
+    """Safely parse a time string in HH:MM or HH:MM:SS format.
+
+    Returns (hour, minute, second) tuple. On invalid input, returns default values.
+    """
+    if not time_str or not isinstance(time_str, str):
+        return (default_hour, default_minute, 0)
+
+    try:
+        parts = time_str.strip().split(":")
+        if not parts:
+            return (default_hour, default_minute, 0)
+
+        hour = int(parts[0]) if parts[0].isdigit() else default_hour
+        minute = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else default_minute
+        second = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+        # Validate ranges
+        hour = max(0, min(23, hour))
+        minute = max(0, min(59, minute))
+        second = max(0, min(59, second))
+
+        return (hour, minute, second)
+    except (ValueError, AttributeError, IndexError) as e:
+        logger.warning(f"Failed to parse time string '{time_str}': {e}")
+        return (default_hour, default_minute, 0)
+
 
 # Execution locks to prevent concurrent execution of the same workflow
 _workflow_locks: Dict[int, asyncio.Lock] = {}
@@ -379,19 +409,37 @@ class NodeExecutor:
 
             expiry_list = response.get("data", [])
             if not expiry_list:
+                self.log(f"No expiry dates found for {symbol} on {exchange}", "error")
                 return None
 
-            # Parse and sort expiry dates
-            def parse_expiry(exp_str: str) -> datetime:
+            # Parse and sort expiry dates, filtering out unparseable ones
+            def parse_expiry(exp_str: str) -> Optional[datetime]:
+                """Parse expiry date string, returns None on failure"""
+                if not exp_str or not isinstance(exp_str, str):
+                    return None
                 # Format: "10-JUL-25" or "25DEC25"
                 for fmt in ["%d-%b-%y", "%d%b%y"]:
                     try:
                         return datetime.strptime(exp_str.upper(), fmt)
                     except ValueError:
                         continue
-                return datetime.max
+                self.log(f"Warning: Could not parse expiry date '{exp_str}'", "warning")
+                return None
 
-            sorted_expiries = sorted(expiry_list, key=parse_expiry)
+            # Filter and sort expiries, removing unparseable ones
+            valid_expiries = []
+            for exp_str in expiry_list:
+                parsed = parse_expiry(exp_str)
+                if parsed is not None:
+                    valid_expiries.append((exp_str, parsed))
+
+            if not valid_expiries:
+                self.log(f"No valid expiry dates found for {symbol}", "error")
+                return None
+
+            # Sort by parsed date
+            valid_expiries.sort(key=lambda x: x[1])
+            sorted_expiries = [exp[0] for exp in valid_expiries]
             now = datetime.now()
             current_month = now.month
             current_year = now.year
@@ -404,30 +452,41 @@ class NodeExecutor:
 
             if expiry_type == "current_week":
                 # Nearest expiry
-                return self._format_expiry_for_api(sorted_expiries[0]) if sorted_expiries else None
+                if sorted_expiries:
+                    return self._format_expiry_for_api(sorted_expiries[0])
+                self.log(f"No current week expiry found for {symbol}", "error")
+                return None
 
             elif expiry_type == "next_week":
                 # Second nearest expiry
-                return self._format_expiry_for_api(sorted_expiries[1]) if len(sorted_expiries) > 1 else None
+                if len(sorted_expiries) > 1:
+                    return self._format_expiry_for_api(sorted_expiries[1])
+                self.log(f"No next week expiry found for {symbol}", "error")
+                return None
 
             elif expiry_type == "current_month":
                 # Last expiry of current calendar month
                 result = None
-                for exp_str in sorted_expiries:
-                    exp_date = parse_expiry(exp_str)
+                for exp_str, exp_date in valid_expiries:
                     if exp_date.month == current_month and exp_date.year == current_year:
                         result = exp_str  # Keep updating to get the last one
-                return self._format_expiry_for_api(result) if result else None
+                if result:
+                    return self._format_expiry_for_api(result)
+                self.log(f"No current month expiry found for {symbol}", "error")
+                return None
 
             elif expiry_type == "next_month":
                 # Last expiry of next calendar month
                 result = None
-                for exp_str in sorted_expiries:
-                    exp_date = parse_expiry(exp_str)
+                for exp_str, exp_date in valid_expiries:
                     if exp_date.month == next_month and exp_date.year == next_year:
                         result = exp_str
-                return self._format_expiry_for_api(result) if result else None
+                if result:
+                    return self._format_expiry_for_api(result)
+                self.log(f"No next month expiry found for {symbol}", "error")
+                return None
 
+            self.log(f"Unknown expiry type: {expiry_type}", "error")
             return None
         except Exception as e:
             self.log(f"Error resolving expiry: {e}", "error")
@@ -752,10 +811,8 @@ class NodeExecutor:
         target_time_str = node_data.get("targetTime", "09:30")
         check_interval_ms = int(node_data.get("checkIntervalMs", 1000))
 
-        target_parts = target_time_str.split(":")
-        target_hour = int(target_parts[0])
-        target_minute = int(target_parts[1]) if len(target_parts) > 1 else 0
-        target_second = int(target_parts[2]) if len(target_parts) > 2 else 0
+        # Use safe time parsing
+        target_hour, target_minute, target_second = parse_time_string(target_time_str, 9, 30)
         target_time = time(target_hour, target_minute, target_second)
 
         now = datetime.now().time()
@@ -812,24 +869,163 @@ class NodeExecutor:
         return {"status": "success", "message": message}
 
     def execute_variable(self, node_data: dict) -> dict:
-        """Execute Variable node"""
+        """Execute Variable node with various operations
+
+        Supported operations:
+        - set: Set variable to a value
+        - get: Get a variable value (and optionally store in another)
+        - add: Add a number to variable
+        - subtract: Subtract a number from variable
+        - multiply: Multiply variable by a number
+        - divide: Divide variable by a number
+        - increment: Add 1 to variable
+        - decrement: Subtract 1 from variable
+        - append: Append string to variable
+        - parse_json: Parse JSON string into object
+        - stringify: Convert object to JSON string
+        """
         # Frontend uses 'variableName', fallback to 'name' for compatibility
         var_name = node_data.get("variableName") or node_data.get("name", "")
+        operation = node_data.get("operation", "set")
         var_value = node_data.get("value", "")
+        source_var = node_data.get("sourceVariable", "")
 
-        # Interpolate the value first
-        var_value = self.context.interpolate(str(var_value))
+        # Interpolate string values
+        if isinstance(var_value, str):
+            var_value = self.context.interpolate(var_value)
 
-        # Try to parse as JSON if it looks like JSON
         try:
-            if var_value.startswith("{") or var_value.startswith("["):
-                var_value = json.loads(var_value)
-        except (json.JSONDecodeError, AttributeError):
-            pass
+            if operation == "set":
+                # Try to parse as JSON if it looks like JSON
+                if isinstance(var_value, str):
+                    if var_value.startswith("{") or var_value.startswith("["):
+                        try:
+                            var_value = json.loads(var_value)
+                        except json.JSONDecodeError:
+                            pass
+                self.context.set_variable(var_name, var_value)
+                self.log(f"Set variable {var_name} = {var_value}")
 
-        self.context.set_variable(var_name, var_value)
-        self.log(f"Set variable {var_name} = {var_value}")
-        return {"status": "success", "variable": var_name, "value": var_value}
+            elif operation == "get":
+                # Get value from source variable and store in target
+                source_value = self.context.get_variable(source_var, "")
+                if var_name:
+                    self.context.set_variable(var_name, source_value)
+                    self.log(f"Copied {source_var} to {var_name}")
+                return {"status": "success", "variable": var_name, "value": source_value}
+
+            elif operation == "add":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    add_value = float(var_value) if var_value else 0
+                    result = current_num + add_value
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Added {add_value} to {var_name}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Add operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "subtract":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    sub_value = float(var_value) if var_value else 0
+                    result = current_num - sub_value
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Subtracted {sub_value} from {var_name}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Subtract operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "multiply":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    mul_value = float(var_value) if var_value else 1
+                    result = current_num * mul_value
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Multiplied {var_name} by {mul_value}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Multiply operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "divide":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    div_value = float(var_value) if var_value else 1
+                    if div_value == 0:
+                        self.log(f"Division by zero error", "error")
+                        return {"status": "error", "message": "Division by zero"}
+                    result = current_num / div_value
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Divided {var_name} by {div_value}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Divide operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "increment":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    result = current_num + 1
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Incremented {var_name}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Increment operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "decrement":
+                current = self.context.get_variable(var_name, 0)
+                try:
+                    current_num = float(current) if current else 0
+                    result = current_num - 1
+                    self.context.set_variable(var_name, result)
+                    self.log(f"Decremented {var_name}: {result}")
+                    var_value = result
+                except (ValueError, TypeError) as e:
+                    self.log(f"Decrement operation failed: {e}", "error")
+                    return {"status": "error", "message": str(e)}
+
+            elif operation == "append":
+                current = self.context.get_variable(var_name, "")
+                result = str(current) + str(var_value)
+                self.context.set_variable(var_name, result)
+                self.log(f"Appended to {var_name}: {result}")
+                var_value = result
+
+            elif operation == "parse_json":
+                try:
+                    parsed = json.loads(str(var_value))
+                    self.context.set_variable(var_name, parsed)
+                    self.log(f"Parsed JSON into {var_name}")
+                    var_value = parsed
+                except json.JSONDecodeError as e:
+                    self.log(f"JSON parse failed: {e}", "error")
+                    return {"status": "error", "message": f"Invalid JSON: {e}"}
+
+            elif operation == "stringify":
+                source_value = self.context.get_variable(source_var, {})
+                result = json.dumps(source_value)
+                self.context.set_variable(var_name, result)
+                self.log(f"Stringified {source_var} into {var_name}")
+                var_value = result
+
+            else:
+                self.log(f"Unknown variable operation: {operation}", "warning")
+                return {"status": "error", "message": f"Unknown operation: {operation}"}
+
+            return {"status": "success", "variable": var_name, "value": var_value, "operation": operation}
+
+        except Exception as e:
+            self.log(f"Variable operation failed: {e}", "error")
+            return {"status": "error", "message": str(e)}
 
     def execute_position_check(self, node_data: dict) -> dict:
         """Execute Position Check node - supports {{variable}} interpolation"""
@@ -894,11 +1090,13 @@ class NodeExecutor:
         end_time_str = node_data.get("endTime", "15:30")
 
         now = datetime.now().time()
-        start_parts = start_time_str.split(":")
-        end_parts = end_time_str.split(":")
 
-        start_time = time(int(start_parts[0]), int(start_parts[1]))
-        end_time = time(int(end_parts[0]), int(end_parts[1]))
+        # Use safe time parsing
+        start_h, start_m, start_s = parse_time_string(start_time_str, 9, 15)
+        end_h, end_m, end_s = parse_time_string(end_time_str, 15, 30)
+
+        start_time = time(start_h, start_m, start_s)
+        end_time = time(end_h, end_m, end_s)
 
         condition_met = start_time <= now <= end_time
 
@@ -922,12 +1120,9 @@ class NodeExecutor:
         condition_type = node_data.get("conditionType", "entry")
 
         now = datetime.now().time()
-        target_parts = target_time_str.split(":")
 
-        # Support both HH:MM and HH:MM:SS formats
-        target_hour = int(target_parts[0])
-        target_minute = int(target_parts[1]) if len(target_parts) > 1 else 0
-        target_second = int(target_parts[2]) if len(target_parts) > 2 else 0
+        # Use safe time parsing
+        target_hour, target_minute, target_second = parse_time_string(target_time_str, 9, 30)
         target_time = time(target_hour, target_minute, target_second)
 
         # Convert times to comparable values (seconds since midnight)
@@ -1011,6 +1206,12 @@ async def execute_workflow(workflow_id: int) -> dict:
             logs = []
             context = WorkflowContext()
 
+            # Broadcast execution started
+            try:
+                await broadcast_execution_update(workflow_id, "running", f"Starting workflow: {workflow.name}")
+            except Exception as e:
+                logger.warning(f"Failed to broadcast execution start: {e}")
+
             try:
                 client = await get_openalgo_client()
                 if not client:
@@ -1040,13 +1241,20 @@ async def execute_workflow(workflow_id: int) -> dict:
                 # Execute nodes starting from start node
                 await execute_node_chain(
                     start_node["id"], nodes, edge_map, executor, context,
-                    visited_count=visited_count, depth=0
+                    visited_count=visited_count, depth=0,
+                    workflow_id=workflow_id  # Pass workflow_id for broadcasting
                 )
 
                 execution.status = "completed"
                 execution.completed_at = datetime.utcnow()
                 execution.logs = logs
                 await db.commit()
+
+                # Broadcast execution completed
+                try:
+                    await broadcast_execution_update(workflow_id, "completed", "Workflow executed successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast execution complete: {e}")
 
                 return {
                     "status": "success",
@@ -1071,6 +1279,12 @@ async def execute_workflow(workflow_id: int) -> dict:
                 execution.logs = logs
                 await db.commit()
 
+                # Broadcast execution failed
+                try:
+                    await broadcast_execution_update(workflow_id, "failed", str(e))
+                except Exception as broadcast_error:
+                    logger.warning(f"Failed to broadcast execution failure: {broadcast_error}")
+
                 return {"status": "error", "message": str(e), "execution_id": execution.id, "logs": logs}
 
 
@@ -1082,6 +1296,7 @@ async def execute_node_chain(
     context: WorkflowContext,
     visited_count: Dict[str, int] = None,
     depth: int = 0,
+    workflow_id: Optional[int] = None,
 ):
     """Execute a chain of nodes starting from the given node
 
@@ -1093,6 +1308,7 @@ async def execute_node_chain(
         context: The workflow context for variable storage
         visited_count: Dictionary tracking how many times each node has been visited
         depth: Current recursion depth
+        workflow_id: Optional workflow ID for WebSocket broadcasting
 
     Raises:
         Exception: If max depth or max visits exceeded (infinite loop protection)
@@ -1201,6 +1417,21 @@ async def execute_node_chain(
     else:
         executor.log(f"Unknown node type: {node_type}", "warning")
 
+    # Broadcast node execution update via WebSocket
+    if workflow_id and node_type != "start":
+        try:
+            node_label = node_data.get("label") or node_type
+            status = "info"
+            if result:
+                status = "success" if result.get("status") == "success" else "error"
+            await broadcast_execution_update(
+                workflow_id,
+                "node_executed",
+                f"Executed: {node_label}"
+            )
+        except Exception as e:
+            logger.debug(f"Failed to broadcast node update: {e}")
+
     # Determine which edges to follow
     edges_to_follow = edge_map.get(node_id, [])
 
@@ -1225,7 +1456,8 @@ async def execute_node_chain(
         if target_id:
             await execute_node_chain(
                 target_id, nodes, edge_map, executor, context,
-                visited_count=visited_count, depth=depth + 1
+                visited_count=visited_count, depth=depth + 1,
+                workflow_id=workflow_id
             )
 
 

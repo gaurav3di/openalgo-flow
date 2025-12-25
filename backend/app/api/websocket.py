@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
+from datetime import datetime
 import asyncio
 import json
 import logging
@@ -110,11 +111,23 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
-async def broadcast_execution_update(workflow_id: int, status: str, message: str):
-    """Broadcast workflow execution updates"""
-    await manager.broadcast({
+async def broadcast_execution_update(workflow_id: int, status: str, message: str, logs: Optional[list] = None):
+    """Broadcast workflow execution updates
+
+    Args:
+        workflow_id: The workflow being executed
+        status: Current status (running, completed, failed, node_executed)
+        message: Status message
+        logs: Optional list of log entries
+    """
+    data = {
         "type": "execution",
         "workflow_id": workflow_id,
         "status": status,
-        "message": message
-    })
+        "message": message,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    if logs is not None:
+        data["logs"] = logs
+
+    await manager.broadcast(data)

@@ -191,6 +191,15 @@ export interface WorkflowExecution {
   error: string | null;
 }
 
+export interface WorkflowExportData {
+  version: string;
+  name: string;
+  description: string | null;
+  nodes: Node[];
+  edges: Edge[];
+  exported_at: string;
+}
+
 export const workflowsApi = {
   list: () => request<WorkflowListItem[]>(API_ENDPOINTS.WORKFLOWS),
 
@@ -246,6 +255,20 @@ export const workflowsApi = {
 
   getExecutions: (id: number, limit = 20) => request<WorkflowExecution[]>(
     `${API_ENDPOINTS.WORKFLOWS}/${id}/executions?limit=${limit}`
+  ),
+
+  // Export workflow for sharing
+  export: (id: number) => request<WorkflowExportData>(
+    `${API_ENDPOINTS.WORKFLOWS}/${id}/export`
+  ),
+
+  // Import workflow from JSON
+  import: (data: WorkflowExportData) => request<Workflow>(
+    `${API_ENDPOINTS.WORKFLOWS}/import`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
   ),
 };
 

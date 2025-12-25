@@ -20,6 +20,7 @@ import {
   Loader2,
   MoreVertical,
   Terminal,
+  Download,
 } from 'lucide-react'
 import { workflowsApi } from '@/lib/api'
 import { DEFAULT_NODE_DATA } from '@/lib/constants'
@@ -227,6 +228,30 @@ export function Editor() {
     selectNode(null)
   }, [selectNode])
 
+  const handleExport = useCallback(async () => {
+    try {
+      const exportData = await workflowsApi.export(Number(id))
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${exportData.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast({ title: 'Workflow exported', variant: 'success' })
+    } catch (error) {
+      toast({
+        title: 'Export failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    }
+  }, [id, toast])
+
   if (isLoading) {
     return (
       <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
@@ -316,6 +341,10 @@ export function Editor() {
                 <DropdownMenuItem onClick={() => setShowLogPanel(!showLogPanel)}>
                   <Terminal className="mr-2 h-4 w-4" />
                   {showLogPanel ? 'Hide Logs' : 'Show Logs'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExport}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Workflow
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

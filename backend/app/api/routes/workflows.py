@@ -14,7 +14,9 @@ from app.schemas.workflow import (
     WorkflowUpdate,
     WorkflowResponse,
     WorkflowListItem,
-    WorkflowExecutionResponse
+    WorkflowExecutionResponse,
+    WorkflowExport,
+    WorkflowImport
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -218,3 +220,86 @@ async def execute_workflow_now(
     from app.services.executor import execute_workflow
     result = await execute_workflow(workflow_id)
     return result
+
+
+@router.get("/{workflow_id}/export", response_model=WorkflowExport)
+@limiter.limit(READ_LIMIT)
+async def export_workflow(
+    request: Request,
+    workflow_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(get_current_admin)
+):
+    """Export a workflow as JSON for sharing
+
+    Returns the workflow in a format that can be imported by other users.
+    Does not include execution history or schedule state.
+    """
+    result = await db.execute(
+        select(Workflow).where(Workflow.id == workflow_id)
+    )
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    return WorkflowExport(
+        version="1.0",
+        name=workflow.name,
+        description=workflow.description,
+        nodes=workflow.nodes or [],
+        edges=workflow.edges or [],
+        exported_at=datetime.utcnow()
+    )
+
+
+@router.post("/import", response_model=WorkflowResponse)
+@limiter.limit(API_LIMIT)
+async def import_workflow(
+    request: Request,
+    workflow_data: WorkflowImport,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(get_current_admin)
+):
+    """Import a workflow from JSON
+
+    Creates a new workflow from the provided data.
+    The workflow will be inactive after import.
+    """
+    # Validate nodes have required structure
+    for node in workflow_data.nodes:
+        if "id" not in node or "type" not in node:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid workflow: nodes must have 'id' and 'type' fields"
+            )
+
+    # Validate edges have required structure
+    for edge in workflow_data.edges:
+        if "source" not in edge or "target" not in edge:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid workflow: edges must have 'source' and 'target' fields"
+            )
+
+    # Check if a workflow with the same name exists
+    existing = await db.execute(
+        select(Workflow).where(Workflow.name == workflow_data.name)
+    )
+    if existing.scalar_one_or_none():
+        # Append a suffix to make it unique
+        workflow_data.name = f"{workflow_data.name} (imported)"
+
+    # Create the workflow
+    db_workflow = Workflow(
+        name=workflow_data.name,
+        description=workflow_data.description,
+        nodes=workflow_data.nodes,
+        edges=workflow_data.edges,
+        is_active=False  # Always import as inactive
+    )
+    db.add(db_workflow)
+    await db.commit()
+    await db.refresh(db_workflow)
+
+    return db_workflow

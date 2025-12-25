@@ -88,3 +88,24 @@ class WorkflowExecutionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WorkflowExport(BaseModel):
+    """Schema for exporting a workflow to share with others"""
+    version: str = "1.0"
+    name: str
+    description: Optional[str] = None
+    nodes: list[dict]
+    edges: list[dict]
+    exported_at: datetime
+
+
+class WorkflowImport(BaseModel):
+    """Schema for importing a workflow"""
+    version: Optional[str] = "1.0"
+    name: str
+    description: Optional[str] = None
+    nodes: list[dict]
+    edges: list[dict]
+    # These fields are ignored on import but may be present
+    exported_at: Optional[datetime] = None

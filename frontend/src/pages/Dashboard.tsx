@@ -12,8 +12,9 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Upload,
 } from 'lucide-react'
-import { workflowsApi, type WorkflowListItem } from '@/lib/api'
+import { workflowsApi, type WorkflowListItem, type WorkflowExportData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -33,6 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -188,7 +190,10 @@ export function Dashboard() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
+  const [importJson, setImportJson] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
 
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
@@ -208,9 +213,55 @@ export function Dashboard() {
     },
   })
 
+  const importMutation = useMutation({
+    mutationFn: workflowsApi.import,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      setIsImportOpen(false)
+      setImportJson('')
+      setImportError(null)
+      toast({ title: 'Workflow imported', description: `Created "${data.name}"`, variant: 'success' })
+      navigate(`/editor/${data.id}`)
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Import failed', description: error.message, variant: 'destructive' })
+    },
+  })
+
   const handleCreate = () => {
     if (!newWorkflowName.trim()) return
     createMutation.mutate({ name: newWorkflowName.trim() })
+  }
+
+  const handleImport = () => {
+    setImportError(null)
+    try {
+      const parsed = JSON.parse(importJson) as WorkflowExportData
+      // Validate basic structure
+      if (!parsed.name || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+        setImportError('Invalid workflow format. Must have name, nodes, and edges.')
+        return
+      }
+      importMutation.mutate(parsed)
+    } catch {
+      setImportError('Invalid JSON format. Please check the workflow data.')
+    }
+  }
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      setImportJson(content)
+      setImportError(null)
+    }
+    reader.onerror = () => {
+      setImportError('Failed to read file')
+    }
+    reader.readAsText(file)
   }
 
   if (isLoading) {
@@ -230,10 +281,16 @@ export function Dashboard() {
             Create and manage your trading automations
           </p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} className="btn-glow">
-          <Plus className="mr-2 h-4 w-4" />
-          New Workflow
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setIsImportOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import
+          </Button>
+          <Button onClick={() => setIsCreateOpen(true)} className="btn-glow">
+            <Plus className="mr-2 h-4 w-4" />
+            New Workflow
+          </Button>
+        </div>
       </div>
 
       {workflows && workflows.length > 0 ? (
@@ -291,6 +348,75 @@ export function Dashboard() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isImportOpen} onOpenChange={(open) => {
+        setIsImportOpen(open)
+        if (!open) {
+          setImportJson('')
+          setImportError(null)
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Workflow</DialogTitle>
+            <DialogDescription>
+              Import a workflow from a JSON file or paste the JSON data
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="file">Upload File</Label>
+              <Input
+                id="file"
+                type="file"
+                accept=".json"
+                onChange={handleFileUpload}
+                className="cursor-pointer"
+              />
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  or paste JSON
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="json">Workflow JSON</Label>
+              <Textarea
+                id="json"
+                placeholder='{"name": "My Workflow", "nodes": [...], "edges": [...]}'
+                value={importJson}
+                onChange={(e) => {
+                  setImportJson(e.target.value)
+                  setImportError(null)
+                }}
+                className="h-40 font-mono text-sm"
+              />
+              {importError && (
+                <p className="text-sm text-destructive">{importError}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!importJson.trim() || importMutation.isPending}
+            >
+              {importMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Import
             </Button>
           </DialogFooter>
         </DialogContent>

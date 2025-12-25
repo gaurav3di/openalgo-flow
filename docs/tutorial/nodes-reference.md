@@ -30,16 +30,25 @@ Triggers are entry points that start workflow execution.
 |-------|-------------|
 | Schedule Type | `Daily`, `Weekly`, `Interval`, or `Once` |
 | Time | Execution time (HH:MM format) |
-| Days | For weekly: Select days (Mon-Sun) |
+| Days | Select which days to run (for Daily/Weekly) |
 | Interval | For interval: Value + Unit (seconds/minutes/hours) |
 | Date | For once: Specific date |
 
+**Day Selection** (for Daily/Weekly):
+| Preset | Days |
+|--------|------|
+| Weekdays | Mon, Tue, Wed, Thu, Fri |
+| Weekends | Sat, Sun |
+| All Days | Every day |
+| Custom | Select individual days |
+
 **Examples**:
 ```
-Daily at 9:15 AM
+Daily at 9:15 AM on weekdays only
 Weekly on Mon, Wed, Fri at 9:30 AM
 Every 5 minutes
 Once on 2025-01-15 at 10:00 AM
+Daily at 9:15 AM only on Tue, Thu (custom selection)
 ```
 
 ---
@@ -570,6 +579,170 @@ Fetch market data.
 
 ---
 
+### Symbol Info
+
+**Purpose**: Get symbol details (lot size, tick size, expiry, etc.).
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Symbol | Symbol to fetch (supports `{{variable}}`) |
+| Exchange | Exchange |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{symbolInfo.data.lotsize}}     - Lot size
+{{symbolInfo.data.tick_size}}   - Tick size
+{{symbolInfo.data.expiry}}      - Expiry date (for F&O)
+{{symbolInfo.data.instrument}}  - Instrument type
+```
+
+---
+
+### Option Symbol
+
+**Purpose**: Resolve option symbol from underlying (ATM/ITM/OTM).
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Underlying | Index symbol (e.g., `NIFTY`, `BANKNIFTY`) |
+| Exchange | `NSE_INDEX` or `BSE_INDEX` |
+| Expiry Date | Expiry in format `30DEC25` (supports `{{variable}}`) |
+| Offset | `ATM`, `ITM1-10`, `OTM1-10` |
+| Option Type | `CE` (Call) or `PE` (Put) |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{optSym.data.symbol}}      - Resolved option symbol
+{{optSym.data.strike}}      - Strike price
+{{optSym.data.underlying}}  - Underlying symbol
+```
+
+**Example**:
+```
+Underlying: NIFTY
+Expiry: 02JAN25
+Offset: ATM
+Option Type: CE
+Output: optSymbol
+
+Result: NIFTY02JAN25C24500 (assuming NIFTY at 24500)
+```
+
+---
+
+### Order Book
+
+**Purpose**: Fetch all orders for the day.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{orderbook.data}}           - Array of all orders
+{{orderbook.data[0].orderid}} - First order ID
+{{orderbook.data[0].status}}  - First order status
+{{orderbook.data[0].symbol}}  - First order symbol
+```
+
+---
+
+### Trade Book
+
+**Purpose**: Fetch all executed trades for the day.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{tradebook.data}}              - Array of all trades
+{{tradebook.data[0].tradeid}}   - First trade ID
+{{tradebook.data[0].price}}     - First trade price
+{{tradebook.data[0].quantity}}  - First trade quantity
+```
+
+---
+
+### Position Book
+
+**Purpose**: Fetch all open positions.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{positions.data}}                 - Array of all positions
+{{positions.data[0].symbol}}       - First position symbol
+{{positions.data[0].quantity}}     - First position quantity
+{{positions.data[0].pnl}}          - First position P&L
+{{positions.data[0].average_price}} - Average entry price
+```
+
+---
+
+### Synthetic Future
+
+**Purpose**: Calculate synthetic future price from options.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Underlying | Index symbol |
+| Exchange | `NSE_INDEX` or `BSE_INDEX` |
+| Expiry Date | Expiry in format `30DEC25` |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{synthetic.data.price}}        - Synthetic future price
+{{synthetic.data.atm_strike}}   - ATM strike price
+{{synthetic.data.call_price}}   - ATM call price
+{{synthetic.data.put_price}}    - ATM put price
+```
+
+**Use Case**: More accurate fair value than spot for options strategies.
+
+---
+
+### Option Chain
+
+**Purpose**: Fetch complete option chain data.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Underlying | Index symbol |
+| Exchange | `NSE_INDEX` or `BSE_INDEX` |
+| Expiry Date | Expiry in format `30DEC25` |
+| Strike Count | Number of strikes around ATM (default: 10) |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{chain.data}}                    - Full option chain array
+{{chain.data[0].strike}}          - First strike price
+{{chain.data[0].call_ltp}}        - Call LTP at strike
+{{chain.data[0].put_ltp}}         - Put LTP at strike
+{{chain.data[0].call_oi}}         - Call open interest
+{{chain.data[0].put_oi}}          - Put open interest
+{{chain.data[0].call_iv}}         - Call implied volatility
+{{chain.data[0].put_iv}}          - Put implied volatility
+```
+
+---
+
 ## Utilities
 
 Helper operations.
@@ -717,3 +890,53 @@ Output: apiResponse
 | Color | Visual color (Default, Blue, Green, Red, Purple, Orange) |
 
 **Usage**: Drag nodes inside the group for organization.
+
+---
+
+### Holidays
+
+**Purpose**: Get market holidays for a year.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Year | Year to fetch holidays for (default: current year) |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{holidays.data}}              - Array of all holidays
+{{holidays.data[0].date}}      - First holiday date
+{{holidays.data[0].name}}      - First holiday name
+{{holidays.data[0].exchange}}  - Exchange(s) closed
+```
+
+**Use Cases**:
+- Skip trading on holidays
+- Plan around market closures
+- Build holiday-aware strategies
+
+---
+
+### Timings
+
+**Purpose**: Get market timings for a specific date.
+
+**Configuration**:
+| Field | Description |
+|-------|-------------|
+| Date | Date to check (YYYY-MM-DD format, default: today) |
+| Output Variable | Variable name |
+
+**Output Access**:
+```
+{{timings.data.market_open}}   - Market open time
+{{timings.data.market_close}}  - Market close time
+{{timings.data.is_holiday}}    - Whether it's a holiday
+{{timings.data.is_weekend}}    - Whether it's a weekend
+```
+
+**Use Cases**:
+- Dynamic time-based entry/exit
+- Handle special trading sessions
+- Muhurat trading detection

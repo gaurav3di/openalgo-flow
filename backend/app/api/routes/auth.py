@@ -13,7 +13,7 @@ from app.core.auth import (
     verify_password,
     create_access_token,
     get_current_admin,
-    ACCESS_TOKEN_EXPIRE_HOURS,
+    ACCESS_TOKEN_EXPIRE_DAYS,
 )
 from app.core.rate_limit import limiter, AUTH_LIMIT, API_LIMIT
 from app.models.settings import AppSettings
@@ -43,7 +43,7 @@ class TokenResponse(BaseModel):
     """Token response"""
     access_token: str
     token_type: str = "bearer"
-    expires_in: int = ACCESS_TOKEN_EXPIRE_HOURS * 3600
+    expires_in: int = ACCESS_TOKEN_EXPIRE_DAYS * 86400  # seconds in a day
 
 
 class AuthStatusResponse(BaseModel):
@@ -111,7 +111,7 @@ async def setup_admin(
     # Generate token for immediate login
     access_token = create_access_token(
         data={"sub": setup_data.username},
-        expires_delta=timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     )
 
     return TokenResponse(access_token=access_token)
@@ -159,7 +159,7 @@ async def login(
 
     access_token = create_access_token(
         data={"sub": "admin"},
-        expires_delta=timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     )
 
     return TokenResponse(access_token=access_token)

@@ -788,6 +788,109 @@ class NodeExecutor:
         self.store_output(node_data, result)
         return result
 
+    def execute_symbol(self, node_data: dict) -> dict:
+        """Execute Symbol node - get symbol info (lotsize, tick_size, etc.)"""
+        symbol = self.get_str(node_data, "symbol", "")
+        exchange = self.get_str(node_data, "exchange", "NSE")
+        self.log(f"Getting symbol info for: {symbol} ({exchange})")
+        result = self.client.symbol(symbol=symbol, exchange=exchange)
+        self.log(f"Symbol result: {result}")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_option_symbol(self, node_data: dict) -> dict:
+        """Execute OptionSymbol node - resolve option symbol from underlying"""
+        underlying = self.get_str(node_data, "underlying", "NIFTY")
+        exchange = self.get_str(node_data, "exchange", "NSE_INDEX")
+        expiry_date = self.get_str(node_data, "expiryDate", "")
+        offset = self.get_str(node_data, "offset", "ATM")
+        option_type = self.get_str(node_data, "optionType", "CE")
+        self.log(f"Resolving option symbol: {underlying} {option_type} {offset}")
+        result = self.client.optionsymbol(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date,
+            offset=offset,
+            option_type=option_type
+        )
+        self.log(f"Option symbol result: {result}")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_order_book(self, node_data: dict) -> dict:
+        """Execute OrderBook node - get all orders for the day"""
+        self.log("Fetching order book")
+        result = self.client.orderbook()
+        self.log(f"Order book: {len(result.get('data', []))} orders")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_trade_book(self, node_data: dict) -> dict:
+        """Execute TradeBook node - get all trades for the day"""
+        self.log("Fetching trade book")
+        result = self.client.tradebook()
+        self.log(f"Trade book: {len(result.get('data', []))} trades")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_position_book(self, node_data: dict) -> dict:
+        """Execute PositionBook node - get all positions"""
+        self.log("Fetching position book")
+        result = self.client.positionbook()
+        self.log(f"Position book: {len(result.get('data', []))} positions")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_synthetic_future(self, node_data: dict) -> dict:
+        """Execute SyntheticFuture node - calculate synthetic future price"""
+        underlying = self.get_str(node_data, "underlying", "NIFTY")
+        exchange = self.get_str(node_data, "exchange", "NSE_INDEX")
+        expiry_date = self.get_str(node_data, "expiryDate", "")
+        self.log(f"Calculating synthetic future for: {underlying}")
+        result = self.client.syntheticfuture(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date
+        )
+        self.log(f"Synthetic future result: {result}")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_option_chain(self, node_data: dict) -> dict:
+        """Execute OptionChain node - get option chain data"""
+        underlying = self.get_str(node_data, "underlying", "NIFTY")
+        exchange = self.get_str(node_data, "exchange", "NSE_INDEX")
+        expiry_date = self.get_str(node_data, "expiryDate", "")
+        strike_count = self.get_int(node_data, "strikeCount", 10)
+        self.log(f"Fetching option chain for: {underlying} expiry={expiry_date}")
+        result = self.client.optionchain(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date,
+            strike_count=strike_count
+        )
+        self.log(f"Option chain result received")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_holidays(self, node_data: dict) -> dict:
+        """Execute Holidays node - get market holidays for a year"""
+        year = self.get_str(node_data, "year", str(datetime.now().year))
+        self.log(f"Fetching holidays for year: {year}")
+        result = self.client.holidays(year=year)
+        self.log(f"Holidays: {len(result.get('data', []))} holidays")
+        self.store_output(node_data, result)
+        return result
+
+    def execute_timings(self, node_data: dict) -> dict:
+        """Execute Timings node - get market timings for a date"""
+        date = self.get_str(node_data, "date", datetime.now().strftime("%Y-%m-%d"))
+        self.log(f"Fetching market timings for: {date}")
+        result = self.client.timings(date=date)
+        self.log(f"Timings result: {result}")
+        self.store_output(node_data, result)
+        return result
+
     def execute_telegram_alert(self, node_data: dict) -> dict:
         """Execute Telegram Alert node"""
         username = node_data.get("username", "")
@@ -1714,6 +1817,24 @@ async def execute_node_chain(
         result = executor.execute_history(node_data)
     elif node_type == "expiry":
         result = executor.execute_expiry(node_data)
+    elif node_type == "symbol":
+        result = executor.execute_symbol(node_data)
+    elif node_type == "optionSymbol":
+        result = executor.execute_option_symbol(node_data)
+    elif node_type == "orderBook":
+        result = executor.execute_order_book(node_data)
+    elif node_type == "tradeBook":
+        result = executor.execute_trade_book(node_data)
+    elif node_type == "positionBook":
+        result = executor.execute_position_book(node_data)
+    elif node_type == "syntheticFuture":
+        result = executor.execute_synthetic_future(node_data)
+    elif node_type == "optionChain":
+        result = executor.execute_option_chain(node_data)
+    elif node_type == "holidays":
+        result = executor.execute_holidays(node_data)
+    elif node_type == "timings":
+        result = executor.execute_timings(node_data)
     elif node_type == "telegramAlert":
         result = executor.execute_telegram_alert(node_data)
     elif node_type == "httpRequest":

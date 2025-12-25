@@ -326,12 +326,81 @@ class OpenAlgoClient:
             logger.error(f"Connection test failed: {e}")
             return {"status": "error", "message": str(e)}
 
-    def get_holidays(self, year: int) -> dict:
+    def symbol(self, symbol: str, exchange: str) -> dict:
+        """Get symbol info (lotsize, tick_size, expiry, etc.) using SDK"""
+        return self.client.symbol(symbol=symbol, exchange=exchange)
+
+    def optionsymbol(
+        self,
+        underlying: str,
+        exchange: str,
+        expiry_date: str,
+        offset: str,
+        option_type: str
+    ) -> dict:
+        """Resolve option symbol from underlying using SDK"""
+        return self.client.optionsymbol(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date,
+            offset=offset,
+            option_type=option_type
+        )
+
+    def orderbook(self) -> dict:
+        """Get order book using SDK (alias for get_orderbook)"""
+        return self.client.orderbook()
+
+    def tradebook(self) -> dict:
+        """Get trade book using SDK (alias for get_tradebook)"""
+        return self.client.tradebook()
+
+    def positionbook(self) -> dict:
+        """Get position book using SDK (alias for get_positions)"""
+        return self.client.positionbook()
+
+    def syntheticfuture(
+        self,
+        underlying: str,
+        exchange: str,
+        expiry_date: str
+    ) -> dict:
+        """Calculate synthetic future price using SDK"""
+        return self.client.syntheticfuture(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date
+        )
+
+    def optionchain(
+        self,
+        underlying: str,
+        exchange: str,
+        expiry_date: str,
+        strike_count: int = 10
+    ) -> dict:
+        """Get option chain using SDK"""
+        return self.client.optionchain(
+            underlying=underlying,
+            exchange=exchange,
+            expiry_date=expiry_date,
+            strike_count=strike_count
+        )
+
+    def holidays(self, year: str) -> dict:
         """Get market holidays using SDK"""
         return self.client.holidays(year=year)
 
-    def get_timings(self, date: str) -> dict:
+    def timings(self, date: str) -> dict:
         """Get market timings using SDK"""
+        return self.client.timings(date=date)
+
+    def get_holidays(self, year: int) -> dict:
+        """Get market holidays using SDK (deprecated - use holidays)"""
+        return self.client.holidays(year=year)
+
+    def get_timings(self, date: str) -> dict:
+        """Get market timings using SDK (deprecated - use timings)"""
         return self.client.timings(date=date)
 
     def get_analyzer_status(self) -> dict:

@@ -66,11 +66,11 @@ export const StartNode = memo(({ data, selected }: StartNodeProps) => {
               <span className="mono-data font-medium">{data.time || '09:15'}</span>
             </div>
           )}
-          {data.scheduleType === 'weekly' && data.days && data.days.length > 0 && (
+          {(data.scheduleType === 'daily' || data.scheduleType === 'weekly') && data.days && data.days.length > 0 && data.days.length < 7 && (
             <div className="mt-0.5 flex items-center justify-between">
               <span className="text-muted-foreground">Days:</span>
               <span className="mono-data text-[9px]">
-                {data.days.map((d) => ['M', 'T', 'W', 'T', 'F', 'S', 'S'][d]).join(', ')}
+                {data.days.map((d) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][d]).join('')}
               </span>
             </div>
           )}

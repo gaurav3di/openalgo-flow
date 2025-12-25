@@ -24,6 +24,13 @@ import {
   Group,
   Webhook,
   Globe,
+  Tag,
+  Target,
+  ClipboardList,
+  Receipt,
+  Calculator,
+  Grid3X3,
+  CalendarX,
 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -278,6 +285,55 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
       icon: <BarChart3 className="h-3.5 w-3.5 text-primary" />,
       color: 'bg-primary/10',
     },
+    {
+      type: 'symbol',
+      label: 'Symbol Info',
+      description: 'Get symbol details',
+      icon: <Tag className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'optionSymbol',
+      label: 'Option Symbol',
+      description: 'Resolve options',
+      icon: <Target className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'orderBook',
+      label: 'Order Book',
+      description: 'All orders',
+      icon: <ClipboardList className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'tradeBook',
+      label: 'Trade Book',
+      description: 'Executed trades',
+      icon: <Receipt className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'positionBook',
+      label: 'Position Book',
+      description: 'All positions',
+      icon: <Briefcase className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'syntheticFuture',
+      label: 'Synthetic Future',
+      description: 'Calc future price',
+      icon: <Calculator className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
+    {
+      type: 'optionChain',
+      label: 'Option Chain',
+      description: 'Full chain data',
+      icon: <Grid3X3 className="h-3.5 w-3.5 text-primary" />,
+      color: 'bg-primary/10',
+    },
   ]
 
   const utilities = [
@@ -329,6 +385,20 @@ export function NodePalette({ onDragStart }: NodePaletteProps) {
       description: 'API call',
       icon: <Globe className="h-3.5 w-3.5 text-primary" />,
       color: 'bg-primary/10',
+    },
+    {
+      type: 'holidays',
+      label: 'Holidays',
+      description: 'Market holidays',
+      icon: <CalendarX className="h-3.5 w-3.5 text-purple-400" />,
+      color: 'bg-purple-400/10',
+    },
+    {
+      type: 'timings',
+      label: 'Timings',
+      description: 'Market hours',
+      icon: <Clock className="h-3.5 w-3.5 text-purple-400" />,
+      color: 'bg-purple-400/10',
     },
   ]
 

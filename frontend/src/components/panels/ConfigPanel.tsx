@@ -186,6 +186,15 @@ const NODE_TITLES: Record<string, string> = {
   variable: 'Variable',
   log: 'Log',
   group: 'Group',
+  symbol: 'Symbol Info',
+  optionSymbol: 'Option Symbol',
+  orderBook: 'Order Book',
+  tradeBook: 'Trade Book',
+  positionBook: 'Position Book',
+  syntheticFuture: 'Synthetic Future',
+  optionChain: 'Option Chain',
+  holidays: 'Market Holidays',
+  timings: 'Market Timings',
 }
 
 export function ConfigPanel() {
@@ -607,12 +616,44 @@ export function ConfigPanel() {
                 </div>
               )}
 
-              {nodeData.scheduleType === 'weekly' && (
+              {/* Day selection - shown for daily and weekly */}
+              {(nodeData.scheduleType === 'daily' || nodeData.scheduleType === 'weekly') && (
                 <div className="space-y-2">
-                  <Label>Days</Label>
+                  <Label>Run On Days</Label>
+                  {/* Quick presets */}
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDataChange('days', [1, 2, 3, 4, 5])}
+                      className="rounded-md bg-muted px-2 py-1 text-[10px] hover:bg-accent"
+                    >
+                      Weekdays
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDataChange('days', [0, 6])}
+                      className="rounded-md bg-muted px-2 py-1 text-[10px] hover:bg-accent"
+                    >
+                      Weekends
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDataChange('days', [0, 1, 2, 3, 4, 5, 6])}
+                      className="rounded-md bg-muted px-2 py-1 text-[10px] hover:bg-accent"
+                    >
+                      All Days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDataChange('days', [])}
+                      className="rounded-md bg-muted px-2 py-1 text-[10px] hover:bg-accent"
+                    >
+                      Clear
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {DAYS_OF_WEEK.map((day) => {
-                      const days = (nodeData.days as number[]) || []
+                      const days = (nodeData.days as number[]) || [1, 2, 3, 4, 5]
                       const isSelected = days.includes(day.value)
                       return (
                         <button
@@ -636,6 +677,14 @@ export function ConfigPanel() {
                       )
                     })}
                   </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {((nodeData.days as number[]) || [1, 2, 3, 4, 5]).length === 0
+                      ? 'No days selected - workflow will not run'
+                      : `Will run on: ${((nodeData.days as number[]) || [1, 2, 3, 4, 5])
+                          .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label)
+                          .join(', ')}`
+                    }
+                  </p>
                 </div>
               )}
 
@@ -2363,6 +2412,365 @@ export function ConfigPanel() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Checks if available margin is above this amount
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== SYMBOL NODE ===== */}
+          {nodeType === 'symbol' && (
+            <>
+              <div className="space-y-2">
+                <Label>Symbol</Label>
+                <Input
+                  placeholder="e.g., NIFTY30DEC25FUT or {{mySymbol}}"
+                  value={(nodeData.symbol as string) || ''}
+                  onChange={(e) => handleDataChange('symbol', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Supports variable interpolation: {'{{symbolVar}}'}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Exchange</Label>
+                <Select
+                  value={(nodeData.exchange as string) || 'NFO'}
+                  onValueChange={(v) => handleDataChange('exchange', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EXCHANGES.map((ex) => (
+                      <SelectItem key={ex.value} value={ex.value}>
+                        {ex.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="symbolInfo"
+                  value={(nodeData.outputVariable as string) || ''}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{symbolInfo.data.lotsize}}'}, {'{{symbolInfo.data.tick_size}}'}, {'{{symbolInfo.data.expiry}}'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== OPTION SYMBOL NODE ===== */}
+          {nodeType === 'optionSymbol' && (
+            <>
+              <div className="space-y-2">
+                <Label>Underlying</Label>
+                <Input
+                  placeholder="e.g., NIFTY or {{underlying}}"
+                  value={(nodeData.underlying as string) || ''}
+                  onChange={(e) => handleDataChange('underlying', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Exchange</Label>
+                <Select
+                  value={(nodeData.exchange as string) || 'NSE_INDEX'}
+                  onValueChange={(v) => handleDataChange('exchange', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NSE_INDEX">NSE Index</SelectItem>
+                    <SelectItem value="BSE_INDEX">BSE Index</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Expiry Date</Label>
+                <Input
+                  placeholder="e.g., 30DEC25 or {{expiryDate}}"
+                  value={(nodeData.expiryDate as string) || ''}
+                  onChange={(e) => handleDataChange('expiryDate', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Strike Offset</Label>
+                <Select
+                  value={(nodeData.offset as string) || 'ATM'}
+                  onValueChange={(v) => handleDataChange('offset', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ATM">ATM</SelectItem>
+                    <SelectItem value="ITM1">ITM 1</SelectItem>
+                    <SelectItem value="ITM2">ITM 2</SelectItem>
+                    <SelectItem value="ITM3">ITM 3</SelectItem>
+                    <SelectItem value="OTM1">OTM 1</SelectItem>
+                    <SelectItem value="OTM2">OTM 2</SelectItem>
+                    <SelectItem value="OTM3">OTM 3</SelectItem>
+                    <SelectItem value="OTM4">OTM 4</SelectItem>
+                    <SelectItem value="OTM5">OTM 5</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Option Type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['CE', 'PE'].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleDataChange('optionType', type)}
+                      className={cn(
+                        'rounded-lg border py-2 text-sm font-semibold transition-colors',
+                        nodeData.optionType === type
+                          ? type === 'CE' ? 'badge-buy' : 'badge-sell'
+                          : 'border-border bg-muted text-muted-foreground hover:bg-accent'
+                      )}
+                    >
+                      {type === 'CE' ? 'Call (CE)' : 'Put (PE)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="optionSym"
+                  value={(nodeData.outputVariable as string) || ''}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{optionSym.symbol}}'}, {'{{optionSym.lotsize}}'}, {'{{optionSym.underlying_ltp}}'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== ORDER BOOK NODE ===== */}
+          {nodeType === 'orderBook' && (
+            <>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="orders"
+                  value={(nodeData.outputVariable as string) || 'orders'}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{orders.data.orders}}'}, {'{{orders.data.statistics.total_buy_orders}}'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-2">
+                <p className="text-[10px] font-medium mb-1">Returns:</p>
+                <div className="space-y-0.5 text-[9px] font-mono text-muted-foreground">
+                  <p>orders - Array of all orders</p>
+                  <p>statistics - Order stats</p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ===== TRADE BOOK NODE ===== */}
+          {nodeType === 'tradeBook' && (
+            <>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="trades"
+                  value={(nodeData.outputVariable as string) || 'trades'}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{trades.data}}'} to access executed trades array
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== POSITION BOOK NODE ===== */}
+          {nodeType === 'positionBook' && (
+            <>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="positions"
+                  value={(nodeData.outputVariable as string) || 'positions'}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{positions.data}}'} to access all positions array
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== SYNTHETIC FUTURE NODE ===== */}
+          {nodeType === 'syntheticFuture' && (
+            <>
+              <div className="space-y-2">
+                <Label>Underlying</Label>
+                <Input
+                  placeholder="e.g., NIFTY"
+                  value={(nodeData.underlying as string) || ''}
+                  onChange={(e) => handleDataChange('underlying', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Exchange</Label>
+                <Select
+                  value={(nodeData.exchange as string) || 'NSE_INDEX'}
+                  onValueChange={(v) => handleDataChange('exchange', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NSE_INDEX">NSE Index</SelectItem>
+                    <SelectItem value="BSE_INDEX">BSE Index</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Expiry Date</Label>
+                <Input
+                  placeholder="e.g., 25NOV25"
+                  value={(nodeData.expiryDate as string) || ''}
+                  onChange={(e) => handleDataChange('expiryDate', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="synthFuture"
+                  value={(nodeData.outputVariable as string) || ''}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{synthFuture.synthetic_future_price}}'}, {'{{synthFuture.atm_strike}}'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== OPTION CHAIN NODE ===== */}
+          {nodeType === 'optionChain' && (
+            <>
+              <div className="space-y-2">
+                <Label>Underlying</Label>
+                <Input
+                  placeholder="e.g., NIFTY"
+                  value={(nodeData.underlying as string) || ''}
+                  onChange={(e) => handleDataChange('underlying', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Exchange</Label>
+                <Select
+                  value={(nodeData.exchange as string) || 'NSE_INDEX'}
+                  onValueChange={(v) => handleDataChange('exchange', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NSE_INDEX">NSE Index</SelectItem>
+                    <SelectItem value="BSE_INDEX">BSE Index</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Expiry Date</Label>
+                <Input
+                  placeholder="e.g., 30DEC25"
+                  value={(nodeData.expiryDate as string) || ''}
+                  onChange={(e) => handleDataChange('expiryDate', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Strike Count (optional)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 10 (leave empty for full chain)"
+                  value={(nodeData.strikeCount as number) || ''}
+                  onChange={(e) => handleDataChange('strikeCount', parseInt(e.target.value) || undefined)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Number of strikes around ATM. Empty = full chain.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="chain"
+                  value={(nodeData.outputVariable as string) || ''}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{chain.atm_strike}}'}, {'{{chain.chain[0].ce.ltp}}'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== HOLIDAYS NODE ===== */}
+          {nodeType === 'holidays' && (
+            <>
+              <div className="space-y-2">
+                <Label>Year (optional)</Label>
+                <Input
+                  type="number"
+                  placeholder={String(new Date().getFullYear())}
+                  value={(nodeData.year as number) || ''}
+                  onChange={(e) => handleDataChange('year', parseInt(e.target.value) || undefined)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Leave empty for current year
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="holidays"
+                  value={(nodeData.outputVariable as string) || 'holidays'}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{holidays.data}}'} to access holiday list
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ===== TIMINGS NODE ===== */}
+          {nodeType === 'timings' && (
+            <>
+              <div className="space-y-2">
+                <Label>Date (optional)</Label>
+                <Input
+                  type="date"
+                  value={(nodeData.date as string) || ''}
+                  onChange={(e) => handleDataChange('date', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Leave empty for today
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Output Variable</Label>
+                <Input
+                  placeholder="timings"
+                  value={(nodeData.outputVariable as string) || 'timings'}
+                  onChange={(e) => handleDataChange('outputVariable', e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use {'{{timings.data}}'} to access exchange timings
                 </p>
               </div>
             </>

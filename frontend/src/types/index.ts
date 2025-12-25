@@ -348,6 +348,76 @@ export interface IntervalsNodeData {
   outputVariable?: string
 }
 
+/** Symbol Node - Get symbol info (lotsize, tick_size, expiry, etc.) */
+export interface SymbolNodeData {
+  label?: string
+  symbol: string  // Can use {{variable}} interpolation
+  exchange: string
+  outputVariable?: string
+}
+
+/** OptionSymbol Node - Resolve option symbol from underlying */
+export interface OptionSymbolNodeData {
+  label?: string
+  underlying: string  // NIFTY, BANKNIFTY, etc. - can use {{variable}}
+  exchange: 'NSE_INDEX' | 'BSE_INDEX'
+  expiryDate: string  // Format: 30DEC25 - can use {{variable}}
+  offset: string  // ATM, ITM1-10, OTM1-10 - can use {{variable}}
+  optionType: 'CE' | 'PE'
+  outputVariable?: string
+}
+
+/** OrderBook Node - Get order book */
+export interface OrderBookNodeData {
+  label?: string
+  outputVariable?: string
+}
+
+/** TradeBook Node - Get trade book */
+export interface TradeBookNodeData {
+  label?: string
+  outputVariable?: string
+}
+
+/** PositionBook Node - Get all positions */
+export interface PositionBookNodeData {
+  label?: string
+  outputVariable?: string
+}
+
+/** SyntheticFuture Node - Calculate synthetic future price */
+export interface SyntheticFutureNodeData {
+  label?: string
+  underlying: string  // NIFTY, BANKNIFTY, etc.
+  exchange: 'NSE_INDEX' | 'BSE_INDEX'
+  expiryDate: string  // Format: 25NOV25
+  outputVariable?: string
+}
+
+/** OptionChain Node - Get option chain data */
+export interface OptionChainNodeData {
+  label?: string
+  underlying: string  // NIFTY, BANKNIFTY, etc.
+  exchange: 'NSE_INDEX' | 'BSE_INDEX'
+  expiryDate: string  // Format: 30DEC25
+  strikeCount?: number  // Optional: limit strikes around ATM
+  outputVariable?: string
+}
+
+/** Holidays Node - Get market holidays */
+export interface HolidaysNodeData {
+  label?: string
+  year?: number  // Optional: defaults to current year
+  outputVariable?: string
+}
+
+/** Timings Node - Get market timings */
+export interface TimingsNodeData {
+  label?: string
+  date?: string  // Optional: YYYY-MM-DD format, defaults to today
+  outputVariable?: string
+}
+
 // =============================================================================
 // UTILITY NODE DATA TYPES
 // =============================================================================
@@ -446,6 +516,15 @@ export type DataNodeData =
   | OpenPositionNodeData
   | ExpiryNodeData
   | IntervalsNodeData
+  | SymbolNodeData
+  | OptionSymbolNodeData
+  | OrderBookNodeData
+  | TradeBookNodeData
+  | PositionBookNodeData
+  | SyntheticFutureNodeData
+  | OptionChainNodeData
+  | HolidaysNodeData
+  | TimingsNodeData
 
 /** All Utility Node Data Types */
 export type UtilityNodeData =
@@ -518,6 +597,15 @@ export const NODE_TYPES = {
   OPEN_POSITION: 'openPosition',
   EXPIRY: 'expiry',
   INTERVALS: 'intervals',
+  SYMBOL: 'symbol',
+  OPTION_SYMBOL: 'optionSymbol',
+  ORDER_BOOK: 'orderBook',
+  TRADE_BOOK: 'tradeBook',
+  POSITION_BOOK: 'positionBook',
+  SYNTHETIC_FUTURE: 'syntheticFuture',
+  OPTION_CHAIN: 'optionChain',
+  HOLIDAYS: 'holidays',
+  TIMINGS: 'timings',
   // Utilities
   TELEGRAM_ALERT: 'telegramAlert',
   DELAY: 'delay',

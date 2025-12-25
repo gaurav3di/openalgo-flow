@@ -42,6 +42,15 @@ import { OpenPositionNode } from './OpenPositionNode'
 import { ExpiryNode } from './ExpiryNode'
 import { IntervalsNode } from './IntervalsNode'
 import { MultiQuotesNode } from './MultiQuotesNode'
+import { SymbolNode } from './SymbolNode'
+import { OptionSymbolNode } from './OptionSymbolNode'
+import { OrderBookNode } from './OrderBookNode'
+import { TradeBookNode } from './TradeBookNode'
+import { PositionBookNode } from './PositionBookNode'
+import { SyntheticFutureNode } from './SyntheticFutureNode'
+import { OptionChainNode } from './OptionChainNode'
+import { HolidaysNode } from './HolidaysNode'
+import { TimingsNode } from './TimingsNode'
 
 // Utility Nodes
 import { TelegramAlertNode } from './TelegramAlertNode'
@@ -91,6 +100,13 @@ export {
   ExpiryNode,
   IntervalsNode,
   MultiQuotesNode,
+  SymbolNode,
+  OptionSymbolNode,
+  OrderBookNode,
+  TradeBookNode,
+  PositionBookNode,
+  SyntheticFutureNode,
+  OptionChainNode,
   // Utilities
   TelegramAlertNode,
   DelayNode,
@@ -98,6 +114,8 @@ export {
   GroupNode,
   VariableNode,
   LogNode,
+  HolidaysNode,
+  TimingsNode,
 }
 
 /**
@@ -144,6 +162,13 @@ export const nodeTypes = {
   expiry: ExpiryNode,
   intervals: IntervalsNode,
   multiQuotes: MultiQuotesNode,
+  symbol: SymbolNode,
+  optionSymbol: OptionSymbolNode,
+  orderBook: OrderBookNode,
+  tradeBook: TradeBookNode,
+  positionBook: PositionBookNode,
+  syntheticFuture: SyntheticFutureNode,
+  optionChain: OptionChainNode,
 
   // Utilities
   telegramAlert: TelegramAlertNode,
@@ -152,4 +177,6 @@ export const nodeTypes = {
   group: GroupNode,
   variable: VariableNode,
   log: LogNode,
+  holidays: HolidaysNode,
+  timings: TimingsNode,
 } as const

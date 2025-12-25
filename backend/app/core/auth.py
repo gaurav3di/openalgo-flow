@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import secrets
 import logging
+from pathlib import Path
 
 from app.core.database import get_db
 from app.models.settings import AppSettings
@@ -18,9 +19,29 @@ from app.models.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 # Security configuration
-SECRET_KEY = secrets.token_urlsafe(32)  # Generated at startup
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+ACCESS_TOKEN_EXPIRE_DAYS = 30  # 30 days session
+
+# Persist SECRET_KEY to survive server restarts
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+SECRET_KEY_FILE = DATA_DIR / ".secret_key"
+
+
+def get_or_create_secret_key() -> str:
+    """Get existing secret key or create a new one"""
+    DATA_DIR.mkdir(exist_ok=True)
+
+    if SECRET_KEY_FILE.exists():
+        return SECRET_KEY_FILE.read_text().strip()
+
+    # Generate new key and save it
+    key = secrets.token_urlsafe(32)
+    SECRET_KEY_FILE.write_text(key)
+    logger.info("Generated new secret key")
+    return key
+
+
+SECRET_KEY = get_or_create_secret_key()
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -45,7 +66,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
